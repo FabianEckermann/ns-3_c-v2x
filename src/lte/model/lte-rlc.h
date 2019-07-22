@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef LTE_RLC_H
@@ -76,6 +77,18 @@ public:
    * \param lcId
    */
   void SetLcId (uint8_t lcId);
+
+  /**
+   * Sets the source L2 Id for sidelink identification of the PDCP entity
+   * \param src
+   */
+  void SetSourceL2Id (uint32_t src);
+  
+  /**
+   * Sets the destination L2 Id for sidelink identification of the PDCP entity
+   * \param src
+   */
+  void SetDestinationL2Id (uint32_t dst);
 
   /**
    *
@@ -174,6 +187,9 @@ protected:
 
   uint16_t m_rnti; ///< RNTI
   uint8_t m_lcid; ///< LCID
+  /* Additional identifier for sidelink */
+  uint32_t m_srcL2Id; ///< Source L2 ID (24 bits)
+  uint32_t m_dstL2Id; ///< Destination L2 ID (24 bits)
 
   /**
    * Used to inform of a PDU delivery to the MAC SAP provider

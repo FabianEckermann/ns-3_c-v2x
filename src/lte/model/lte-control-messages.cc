@@ -17,6 +17,9 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <marco.miozzo@cttc.es>
+ * Modified by: NIST
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #include "lte-control-messages.h"
@@ -72,7 +75,6 @@ void
 DlDciLteControlMessage::SetDci (DlDciListElement_s dci)
 {
   m_dci = dci;
-
 }
 
 
@@ -84,6 +86,31 @@ DlDciLteControlMessage::GetDci (void)
 
 
 // ----------------------------------------------------------------------------------------------------------
+
+SlDciLteControlMessageV2x::SlDciLteControlMessageV2x (void)
+{
+  SetMessageType (LteControlMessage::SL_DCI_V2X);
+}
+
+SlDciLteControlMessageV2x::~SlDciLteControlMessageV2x (void)
+{
+
+}
+
+void 
+SlDciLteControlMessageV2x::SetDci (SlDciListElementV2x dci)
+{
+  m_dci = dci; 
+}
+
+SlDciListElementV2x
+SlDciLteControlMessageV2x::GetDci (void)
+{
+  return m_dci;
+}
+
+// ----------------------------------------------------------------------------------------------------------
+
 
 
 UlDciLteControlMessage::UlDciLteControlMessage (void)
@@ -107,6 +134,35 @@ UlDciLteControlMessage::SetDci (UlDciListElement_s dci)
 
 UlDciListElement_s
 UlDciLteControlMessage::GetDci (void)
+{
+  return m_dci;
+}
+
+
+// ----------------------------------------------------------------------------------------------------------
+
+
+SlDciLteControlMessage::SlDciLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::SL_DCI);
+}
+
+
+SlDciLteControlMessage::~SlDciLteControlMessage (void)
+{
+
+}
+
+void
+SlDciLteControlMessage::SetDci (SlDciListElement_s dci)
+{
+  m_dci = dci;
+
+}
+
+
+SlDciListElement_s
+SlDciLteControlMessage::GetDci (void)
 {
   return m_dci;
 }
@@ -280,6 +336,49 @@ Sib1LteControlMessage::GetSib1 () const
 }
 
 
+// ----------------------------------------------------------------------------------------------------------
+
+
+SciLteControlMessage::SciLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::SCI);
+}
+
+
+void
+SciLteControlMessage::SetSci (SciListElement_s sci)
+{
+  m_sci = sci;
+}
+
+SciListElement_s
+SciLteControlMessage::GetSci ()
+{
+  return m_sci;
+}
+
+
+// ---------------------------------------------------------------------------
+
+
+SciLteControlMessageV2x::SciLteControlMessageV2x (void)
+{
+  SetMessageType (LteControlMessage::SCI_V2X);
+}
+
+void
+SciLteControlMessageV2x::SetSci (SciListElementV2x sci)
+{
+  m_sci = sci;
+}
+
+SciListElementV2x
+SciLteControlMessageV2x::GetSci()
+{
+  return m_sci; 
+}
+
+
 // ---------------------------------------------------------------------------
 
 
@@ -306,6 +405,49 @@ DlInfoListElement_s
 DlHarqFeedbackLteControlMessage::GetDlHarqFeedback (void)
 {
   return m_dlInfoListElement;
+}
+
+
+// ----------------------------------------------------------------------------------------------------------
+
+
+MibSLLteControlMessage::MibSLLteControlMessage (void)
+{
+  SetMessageType (LteControlMessage::MIB_SL);
+}
+
+void
+MibSLLteControlMessage::SetMibSL (LteRrcSap::MasterInformationBlockSL mibSL)
+{
+  m_mibSL = mibSL;
+}
+
+LteRrcSap::MasterInformationBlockSL
+MibSLLteControlMessage::GetMibSL ()
+{
+  return m_mibSL;
+}
+
+
+// ---------------------------------------------------------------------------
+
+
+SlDiscMessage::SlDiscMessage (void)
+{
+  SetMessageType (LteControlMessage::SL_DISC_MSG);
+}
+
+
+void
+SlDiscMessage::SetSlDiscMessage (SlDiscMsg discMsg)
+{
+  m_discMsg = discMsg;
+}
+
+SlDiscMsg
+SlDiscMessage::GetSlDiscMessage ()
+{
+  return m_discMsg;
 }
 
 

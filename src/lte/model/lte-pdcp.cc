@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include "ns3/log.h"
@@ -73,6 +74,8 @@ LtePdcp::LtePdcp ()
     m_rlcSapProvider (0),
     m_rnti (0),
     m_lcid (0),
+    m_srcL2Id (0),
+    m_dstL2Id (0),
     m_txSequenceNumber (0),
     m_rxSequenceNumber (0)
 {
@@ -125,6 +128,20 @@ LtePdcp::SetLcId (uint8_t lcId)
 {
   NS_LOG_FUNCTION (this << (uint32_t) lcId);
   m_lcid = lcId;
+}
+
+void
+LtePdcp::SetSourceL2Id (uint32_t src)
+{
+  NS_LOG_FUNCTION (this << src);
+  m_srcL2Id = src;
+}
+
+void
+LtePdcp::SetDestinationL2Id (uint32_t dst)
+{
+  NS_LOG_FUNCTION (this << dst);
+  m_dstL2Id = dst;
 }
 
 void
@@ -200,6 +217,8 @@ LtePdcp::DoTransmitPdcpSdu (Ptr<Packet> p)
   LteRlcSapProvider::TransmitPdcpPduParameters params;
   params.rnti = m_rnti;
   params.lcid = m_lcid;
+  params.srcL2Id = m_srcL2Id;
+  params.dstL2Id = m_dstL2Id;
   params.pdcpPdu = p;
 
   m_rlcSapProvider->TransmitPdcpPdu (params);
@@ -232,6 +251,8 @@ LtePdcp::DoReceivePdu (Ptr<Packet> p)
   params.pdcpSdu = p;
   params.rnti = m_rnti;
   params.lcid = m_lcid;
+  params.srcL2Id = m_srcL2Id;
+  params.dstL2Id = m_dstL2Id;
   m_pdcpSapUser->ReceivePdcpSdu (params);
 }
 

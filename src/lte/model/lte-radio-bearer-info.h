@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef LTE_RADIO_BEARER_INFO_H
@@ -97,6 +98,24 @@ public:
 };
 
 
+/**
+ * store information on active sidelink data radio bearer instance
+ * 
+ */
+class LteSidelinkRadioBearerInfo : public LteRadioBearerInfo
+{
+
+public:
+  static TypeId GetTypeId (void);
+
+  //LteRrcSap::RlcConfig m_rlcConfig;
+  uint8_t m_logicalChannelIdentity;
+  LteRrcSap::LogicalChannelConfig m_logicalChannelConfig;
+  uint32_t m_sourceL2Id;
+  uint32_t m_destinationL2Id;
+  //bool m_tx;
+  //bool m_rx;
+};
 
 
 

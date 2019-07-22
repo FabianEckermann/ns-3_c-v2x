@@ -401,6 +401,46 @@ EmuEpcHelper::ActivateEpsBearer (Ptr<NetDevice> ueDevice, uint64_t imsi, Ptr<Epc
 }
 
 
+void
+EmuEpcHelper::ActivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_ASSERT_MSG (m_epcHelper != 0, "sidelink bearers cannot be set up when the EPC is not used");
+
+  m_epcHelper->ActivateSidelinkBearer (ueDevice, tft);
+}  
+
+void
+EmuEpcHelper::DeactivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_ASSERT_MSG (m_epcHelper != 0, "sidelink bearers cannot be set up when the EPC is not used");
+
+  m_epcHelper->DeactivateSidelinkBearer (ueDevice, tft);
+}
+
+void
+EmuEpcHelper::StartDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_ASSERT_MSG (m_epcHelper != 0, "discovery can't start when the EPC is not used");
+
+  m_epcHelper->StartDiscovery (ueDevice, apps, rxtx);
+}  
+
+void
+EmuEpcHelper::StopDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_ASSERT_MSG (m_epcHelper != 0, "no EPC is used");
+
+  m_epcHelper->StopDiscovery (ueDevice, apps, rxtx);
+}
+
 Ptr<Node>
 EmuEpcHelper::GetPgwNode ()
 {

@@ -15,8 +15,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Marco Miozzo <marco.miozzo@cttc.es>
- *         Nicola Baldo <nbaldo@cttc.es>
+ * Authors: Marco Miozzo <marco.miozzo@cttc.es>
+ *          Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef RR_FF_MAC_SCHEDULER_H
@@ -30,6 +31,10 @@
 #include <ns3/lte-common.h>
 #include <ns3/lte-amc.h>
 #include <ns3/lte-ffr-sap.h>
+
+// value for SINR outside the range defined by FF-API, used to indicate that there
+// is no CQI for this element
+#define NO_SINR -5000
 
 #define HARQ_PROC_NUM 8
 #define HARQ_DL_TIMEOUT 11
@@ -222,6 +227,9 @@ private:
    * \returns true if
    */
   static bool SortRlcBufferReq (FfMacSchedSapProvider::SchedDlRlcBufferReqParameters i,FfMacSchedSapProvider::SchedDlRlcBufferReqParameters j);
+  int LcActivePerFlow (uint16_t rnti);
+  double EstimateUlSinr (uint16_t rnti, uint16_t rb);
+
 
   /// Refresh DL CQI maps function
   void RefreshDlCqiMaps (void);
@@ -241,6 +249,14 @@ private:
    * \param size the size
    */
   void UpdateUlRlcBufferInfo (uint16_t rnti, uint16_t size);
+  /**
+   * \brief Update UL RLC buffer info function
+   * \param rnti the RNTI
+   * \param lcid the LCID
+   * \param size the size
+   */
+  void UpdateUlRlcBufferInfo (uint16_t rnti, uint8_t lcid, uint16_t size);
+
 
   /**
   * \brief Update and return a new process Id for the RNTI specified
@@ -259,48 +275,52 @@ private:
   uint8_t HarqProcessAvailability (uint16_t rnti);
 
   /**
-  * \brief Refresh HARQ processes according to the timers
-  *
-  */
+   * \brief Refresh HARQ processes according to the timers
+   *
+   */
   void RefreshHarqProcesses ();
 
   Ptr<LteAmc> m_amc; ///< AMC
 
-  /**
-   * Vectors of UE's RLC info
-  */
-  std::list <FfMacSchedSapProvider::SchedDlRlcBufferReqParameters> m_rlcBufferReq;
+  /*
+   * Vectors of UE's LC info
+   */
+  std::map <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters> m_rlcBufferReq;
 
   /**
-  * Map of UE's DL CQI P01 received
-  */
+   * Map of UE's DL CQI P01 received
+   */
   std::map <uint16_t,uint8_t> m_p10CqiRxed;
   /**
-  * Map of UE's timers on DL CQI P01 received
-  */
+   * Map of UE's timers on DL CQI P01 received
+   */
   std::map <uint16_t,uint32_t> m_p10CqiTimers;
 
-  /**
-  * Map of previous allocated UE per RBG
-  * (used to retrieve info from UL-CQI)
+  /*
+   * Map of previous allocated UE per RBG
+   * (used to retrieve info from UL-CQI)
+   */
+  std::map <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > > m_allocationMaps;  //new structure
+
+  /*
+  * Map of UE statistics (per RNTI basis)
   */
-  std::map <uint16_t, std::vector <uint16_t> > m_allocationMaps;
+  std::map <LteFlowId_t,struct LogicalChannelConfigListElement_s> m_ueLogicalChannelsConfigList;
 
   /**
-  * Map of UEs' UL-CQI per RBG
-  */
+   * Map of UEs' UL-CQI per RBG
+   */
   std::map <uint16_t, std::vector <double> > m_ueCqi;
   /**
-  * Map of UEs' timers on UL-CQI per RBG
-  */
+   * Map of UEs' timers on UL-CQI per RBG
+   */
   std::map <uint16_t, uint32_t> m_ueCqiTimers;
 
-
-
   /**
-  * Map of UE's buffer status reports received
-  */
-  std::map <uint16_t,uint32_t> m_ceBsrRxed;
+   * Map of UE's buffer status reports received
+   */
+  //std::map <uint16_t,uint32_t> m_ceBsrRxed;
+  std::multimap <uint16_t, std::map <uint8_t, uint32_t> > m_ceBsrRxed; //new structure for m_ceBsrRxed in order to handle LCs
 
   // MAC SAPs
   FfMacCschedSapUser* m_cschedSapUser; ///< CSched SAP user
@@ -316,7 +336,9 @@ private:
   FfMacCschedSapProvider::CschedCellConfigReqParameters m_cschedCellConfig; ///< CSched cell config
 
   uint16_t m_nextRntiDl; ///< RNTI of the next user to be served next scheduling in DL
+  uint8_t m_nextLcidDl; ///< Lcid of the next user to be served next scheduling in DL
   uint16_t m_nextRntiUl; ///< RNTI of the next user to be served next scheduling in UL
+  uint8_t m_nextLcidUl; ///< Lcid of the next user to be served next scheduling in UL
 
   uint32_t m_cqiTimersThreshold; ///< # of TTIs for which a CQI can be considered valid
 

@@ -20,6 +20,7 @@
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *          NIST (D2D)
  */
 
 
@@ -74,6 +75,8 @@ public:
   virtual void ReconfigureLc (LcInfo lcinfo);
   virtual void ReleaseLc (uint16_t rnti, uint8_t lcid);
   virtual void UeUpdateConfigurationReq (UeConfig params);
+  virtual void AddPool (uint32_t group, Ptr<SidelinkCommResourcePool> pool);
+  virtual void RemovePool (uint32_t group);
   virtual RachConfig GetRachConfig ();
   virtual AllocateNcRaPreambleReturnValue AllocateNcRaPreamble (uint16_t rnti);
   
@@ -128,6 +131,18 @@ void
 EnbMacMemberLteEnbCmacSapProvider::UeUpdateConfigurationReq (UeConfig params)
 {
   m_mac->DoUeUpdateConfigurationReq (params);
+}
+
+void
+EnbMacMemberLteEnbCmacSapProvider::AddPool (uint32_t group, Ptr<SidelinkCommResourcePool> pool)
+{
+  m_mac->DoAddPool (group, pool);
+}
+
+void
+EnbMacMemberLteEnbCmacSapProvider::RemovePool (uint32_t group)
+{
+  m_mac->DoRemovePool (group);
 }
 
 LteEnbCmacSapProvider::RachConfig 
@@ -917,8 +932,33 @@ LteEnbMac::DoUeUpdateConfigurationReq (LteEnbCmacSapProvider::UeConfig params)
   FfMacCschedSapProvider::CschedUeConfigReqParameters req;
   req.m_rnti = params.m_rnti;
   req.m_transmissionMode = params.m_transmissionMode;
+  req.m_slDestinations = params.m_slDestinations;
+  NS_LOG_DEBUG ("sidelink: adding " << params.m_slDestinations.size () << " destinations for UE with RNTI " << params.m_rnti);
   req.m_reconfigureFlag = true;
   m_cschedSapProvider->CschedUeConfigReq (req);
+}
+
+void
+LteEnbMac::DoAddPool (uint32_t group, Ptr<SidelinkCommResourcePool> pool)
+{
+  NS_LOG_FUNCTION (this);
+
+  // propagates to scheduler
+  FfMacCschedSapProvider::CschedPoolConfigReqParameters req;
+  req.m_group = group;
+  req.m_pool = pool;
+  m_cschedSapProvider->CschedPoolConfigReq (req);
+}
+
+void
+LteEnbMac::DoRemovePool (uint32_t group)
+{
+  NS_LOG_FUNCTION (this);
+
+  // propagates to scheduler
+  FfMacCschedSapProvider::CschedPoolReleaseReqParameters req;
+  req.m_group = group;
+  m_cschedSapProvider->CschedPoolReleaseReq (req);
 }
 
 LteEnbCmacSapProvider::RachConfig 
@@ -1171,6 +1211,18 @@ LteEnbMac::DoSchedUlConfigInd (FfMacSchedSapUser::SchedUlConfigIndParameters ind
                       ind.m_dciList.at (i).m_mcs, ind.m_dciList.at (i).m_tbSize, m_componentCarrierId);
     }
 
+  if (ind.m_sldciList.size () > 0)
+    {
+      NS_LOG_DEBUG ("Sending " << ind.m_sldciList.size () << " SL_DCI messages");
+    }
+  for (unsigned int i = 0; i < ind.m_sldciList.size (); i++)
+    {
+      NS_LOG_DEBUG ("i=" << i << " rnti=" << (uint32_t) (ind.m_sldciList.at (i).m_rnti));
+      // send the correspondent sl dci
+      Ptr<SlDciLteControlMessage> msg = Create<SlDciLteControlMessage> ();
+      msg->SetDci (ind.m_sldciList.at (i));
+      m_enbPhySapProvider->SendLteControlMessage (msg);
+    }
 
 
 }

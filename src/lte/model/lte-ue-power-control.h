@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Piotr Gawlowicz <gawlowicz.p@gmail.com>
+ * Modified by: NIST (D2D)
  *
  */
 
@@ -138,11 +139,19 @@ public:
    */
   void ReportTpc (uint8_t tpc);
 
-  /// Calculate PUSCH transmit power function
+  /**
+   * Calculate PUSCH transmit power 
+   */
   void CalculatePuschTxPower ();
-  /// Calculate PUCCH transmit power function
+  
+  /**
+   * Calculate PUCCH transmit power 
+   */
   void CalculatePucchTxPower ();
-  /// Calculate SRS transmit power function
+  
+  /**
+   * Calculate SRS transmit power 
+   */
   void CalculateSrsTxPower ();
 
   /**
@@ -152,6 +161,7 @@ public:
    * \returns the PUSCH transmit power
    */
   double GetPuschTxPower (std::vector <int> rb);
+
   /**
    * \brief Get PUCCH transmit power function
    *
@@ -159,6 +169,7 @@ public:
    * \returns the PUCCH transmit power
    */
   double GetPucchTxPower (std::vector <int> rb);
+
   /**
    * \brief Get SRS transmit power function
    *
@@ -166,6 +177,28 @@ public:
    * \returns the SRS transmit power
    */
   double GetSrsTxPower (std::vector <int> rb);
+
+  /**
+   * Get PSSCH Tx power for sidelink
+   * \param rb the RB list
+   * \return the transmission power to be used 
+   */
+  double GetPsschTxPower (std::vector <int> rb);
+
+  /**
+   * Get PSCCH Tx power for sidelink
+   * \param rb the RB list
+   * \return the transmission power to be used 
+   */
+  double GetPscchTxPower (std::vector <int> rb);
+    
+  /**
+   * Get PSDCH Tx power for sidelink
+   * \param rb the RB list
+   * \return the transmission power to be used 
+   */
+  double GetPsdchTxPower (std::vector <int> rb);
+  //
 
   /**
    * TracedCallback signature for uplink transmit power.
@@ -192,6 +225,14 @@ private:
   double m_curPuschTxPower; ///< current PUSCH transmit power
   double m_curPucchTxPower; ///< current PUCCH transmit power
   double m_curSrsTxPower; ///< current SRS transmit power
+
+  // NIST
+  // Define PSSCH, PSCCH and PSDCH Tx power for sidelink
+  // to be adjusted them in the scenario
+  double m_psschTxPower;
+  double m_pscchTxPower;
+  double m_psdchTxPower;
+  //
 
   double m_referenceSignalPower; ///< reference signal power
   bool m_rsrpSet; ///< is RSRP set?
@@ -232,6 +273,24 @@ private:
    * uint16_t cellId, uint16_t rnti, double txPower
    */
   TracedCallback<uint16_t, uint16_t, double> m_reportSrsTxPower;
+
+  // NIST: Traces to collect TxPowerSl for PSSCH, PSCCH and PSDCH channels for sidelink
+  /**
+   * Trace information regarding Sidelink TxPower
+   * uint16_t cellId, uint16_t rnti, double txPower
+   */
+  TracedCallback<uint16_t, uint16_t, double> m_reportPsschTxPower;
+  /**
+   * Trace information regarding Sidelink TxPower
+   * uint16_t cellId, uint16_t rnti, double txPower
+   */
+  TracedCallback<uint16_t, uint16_t, double> m_reportPscchTxPower;
+  /**
+   * Trace information regarding Sidelink TxPower
+   * uint16_t cellId, uint16_t rnti, double txPower
+   */ 
+  TracedCallback<uint16_t, uint16_t, double> m_reportPsdchTxPower;
+  //
 
 };
 

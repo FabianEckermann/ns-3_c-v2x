@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Author: Marco Miozzo  <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 #ifndef LTE_RADIO_BEARER_TAG_H
 #define LTE_RADIO_BEARER_TAG_H
@@ -54,6 +55,17 @@ public:
   LteRadioBearerTag (uint16_t  rnti, uint8_t lcId);
   
   /**
+   * Create a LteRadioBearerTag with the given RNTI, LC id, srcL2Id and dstL2Id
+   * Used for sidelink communication
+   * \param rnti the RNTI
+   * \param lcId the LCID
+   * \param srcL2Id the source L2 Id
+   * \param dstL2Id the destination L2 Id
+   */
+  LteRadioBearerTag (uint16_t  rnti, uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id);
+
+
+  /**
   * Create a LteRadioBearerTag with the given RNTI, LC id and layer
    * \param rnti the RNTI
    * \param lcId the LCID
@@ -82,6 +94,20 @@ public:
   */
   void SetLayer (uint8_t layer);
 
+  /**
+   * Sets the source L2 Id for sidelink identification of the PDCP entity
+   * 
+   * @param src the source L2 Id
+   */
+  void SetSourceL2Id (uint32_t src);
+  
+  /**
+   * Sets the source L2 Id for sidelink identification of the PDCP entity
+   * 
+   * @param dst the destination L2 Id
+   */
+  void SetDestinationL2Id (uint32_t dst);
+
 
   virtual void Serialize (TagBuffer i) const;
   virtual void Deserialize (TagBuffer i);
@@ -106,11 +132,26 @@ public:
    * \returns layer
    */
   uint8_t GetLayer (void) const;
+  /**
+   * Get source L2 Id
+   *
+   * \returns source L2 Id
+   */
+  uint32_t GetSourceL2Id (void) const;
+  /**
+   * Get destination L2 Id
+   *
+   * \returns destination L2 Id
+   */
+  uint32_t GetDestinationL2Id (void) const;
 
 private:
   uint16_t m_rnti; ///< RNTI
   uint8_t m_lcid; ///< LCID
   uint8_t m_layer; ///< layer
+  /* Additional identifier for sidelink */
+  uint32_t m_srcL2Id;  ///< Source L2 ID (24 bits)
+  uint32_t m_dstL2Id;  ///< Destination L2 ID (24 bits)
 
 };
 

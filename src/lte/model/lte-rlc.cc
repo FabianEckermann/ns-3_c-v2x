@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -90,7 +91,9 @@ LteRlc::LteRlc ()
   : m_rlcSapUser (0),
     m_macSapProvider (0),
     m_rnti (0),
-    m_lcid (0)
+    m_lcid (0),
+    m_srcL2Id (0),
+    m_dstL2Id (0)
 {
   NS_LOG_FUNCTION (this);
   m_rlcSapProvider = new LteRlcSpecificLteRlcSapProvider<LteRlc> (this);
@@ -139,6 +142,20 @@ LteRlc::SetLcId (uint8_t lcId)
 {
   NS_LOG_FUNCTION (this << (uint32_t) lcId);
   m_lcid = lcId;
+}
+
+void
+LteRlc::SetSourceL2Id (uint32_t src)
+{
+  NS_LOG_FUNCTION (this << src);
+  m_srcL2Id = src;
+}
+  
+void
+LteRlc::SetDestinationL2Id (uint32_t dst)
+{
+  NS_LOG_FUNCTION (this << dst);
+  m_dstL2Id = dst;
 }
 
 void
@@ -241,6 +258,8 @@ LteRlcSm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
   params.pdu = Create<Packet> (bytes);
   params.rnti = m_rnti;
   params.lcid = m_lcid;
+  params.srcL2Id = m_srcL2Id;
+  params.dstL2Id = m_dstL2Id;
   params.layer = layer;
   params.harqProcessId = harqId;
   params.componentCarrierId = componentCarrierId;
@@ -270,6 +289,8 @@ LteRlcSm::ReportBufferStatus ()
   LteMacSapProvider::ReportBufferStatusParameters p;
   p.rnti = m_rnti;
   p.lcid = m_lcid;
+  p.srcL2Id = m_srcL2Id;
+  p.dstL2Id = m_dstL2Id;
   p.txQueueSize = 80000;
   p.txQueueHolDelay = 10;
   p.retxQueueSize = 0;

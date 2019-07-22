@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -42,6 +43,14 @@ LteRadioBearerTag::GetTypeId (void)
                    UintegerValue (0),
                    MakeUintegerAccessor (&LteRadioBearerTag::GetLcid),
                    MakeUintegerChecker<uint8_t> ())
+    .AddAttribute ("srcL2Id", "For sidelink communication, the source L2 identifier",
+                   UintegerValue (0),
+                   MakeUintegerAccessor (&LteRadioBearerTag::GetSourceL2Id),
+                   MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("dstL2Id", "For sidelink communication, the destination L2 identifier",
+                   UintegerValue (0),
+                   MakeUintegerAccessor (&LteRadioBearerTag::GetDestinationL2Id),
+                   MakeUintegerChecker<uint32_t> ())
   ;
   return tid;
 }
@@ -55,19 +64,35 @@ LteRadioBearerTag::GetInstanceTypeId (void) const
 LteRadioBearerTag::LteRadioBearerTag ()
   : m_rnti (0),
     m_lcid (0),
-    m_layer (0)
+    m_layer (0),
+    m_srcL2Id (0),
+    m_dstL2Id (0)
 {
 }
 LteRadioBearerTag::LteRadioBearerTag (uint16_t rnti, uint8_t lcid)
   : m_rnti (rnti),
-    m_lcid (lcid)
+    m_lcid (lcid),
+    m_layer (0),
+    m_srcL2Id (0),
+    m_dstL2Id (0)
 {
 }
 
 LteRadioBearerTag::LteRadioBearerTag (uint16_t rnti, uint8_t lcid, uint8_t layer)
 : m_rnti (rnti),
   m_lcid (lcid),
-  m_layer (layer)
+  m_layer (layer),
+  m_srcL2Id (0),
+  m_dstL2Id (0)
+{
+}
+
+LteRadioBearerTag::LteRadioBearerTag (uint16_t rnti, uint8_t lcid, uint32_t srcL2Id, uint32_t dstL2Id)
+: m_rnti (rnti),
+  m_lcid (lcid),
+  m_layer (0),
+  m_srcL2Id (srcL2Id),
+  m_dstL2Id (dstL2Id)
 {
 }
 
@@ -89,10 +114,22 @@ LteRadioBearerTag::SetLayer (uint8_t layer)
   m_layer = layer;
 }
 
+void
+LteRadioBearerTag::SetSourceL2Id (uint32_t src)
+{
+  m_srcL2Id = src;
+}
+  
+void
+LteRadioBearerTag::SetDestinationL2Id (uint32_t dst)
+{
+  m_dstL2Id = dst;
+}
+
 uint32_t
 LteRadioBearerTag::GetSerializedSize (void) const
 {
-  return 4;
+  return 12;
 }
 
 void
@@ -101,6 +138,8 @@ LteRadioBearerTag::Serialize (TagBuffer i) const
   i.WriteU16 (m_rnti);
   i.WriteU8 (m_lcid);
   i.WriteU8 (m_layer);
+  i.WriteU32 (m_srcL2Id);
+  i.WriteU32 (m_dstL2Id);
 }
 
 void
@@ -109,6 +148,8 @@ LteRadioBearerTag::Deserialize (TagBuffer i)
   m_rnti = (uint16_t) i.ReadU16 ();
   m_lcid = (uint8_t) i.ReadU8 ();
   m_layer = (uint8_t) i.ReadU8 ();
+  m_srcL2Id = (uint32_t) i.ReadU32 ();
+  m_dstL2Id = (uint32_t) i.ReadU32 ();
 }
 
 uint16_t
@@ -127,6 +168,18 @@ uint8_t
 LteRadioBearerTag::GetLayer () const
 {
   return m_layer;
+}
+
+uint32_t
+LteRadioBearerTag::GetSourceL2Id () const
+{
+  return m_srcL2Id;
+}
+
+uint32_t
+LteRadioBearerTag::GetDestinationL2Id () const
+{
+  return m_dstL2Id;
 }
 
 void

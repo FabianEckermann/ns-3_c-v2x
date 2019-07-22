@@ -15,8 +15,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Nicola Baldo <nbaldo@cttc.es>
- *         Marco Miozzo <mmiozzo@cttc.es>
+ * Authors: Nicola Baldo <nbaldo@cttc.es>
+ *          Marco Miozzo <mmiozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef LTE_ENB_CMAC_SAP_H
@@ -26,6 +27,7 @@
 #include <ns3/ff-mac-common.h>
 #include <ns3/eps-bearer.h>
 #include <ns3/lte-common.h>
+#include <ns3/sl-pool.h>
 
 namespace ns3 {
 
@@ -120,6 +122,17 @@ public:
      * Transmission mode [1..7] (i.e., SISO, MIMO, etc.)
      */
     uint8_t   m_transmissionMode;
+
+    /**
+     * UE id assigned for sidelink within this cell
+     */
+    //uint16_t m_slrnti;
+    
+    /**
+     * The list of destinations this UE can perform sidelink transmission
+     * The index is used by SL BSR to indicate which group the request is for
+     */
+    std::vector<uint32_t> m_slDestinations;
   };
 
   /** 
@@ -128,6 +141,19 @@ public:
    * \param params 
    */
   virtual void UeUpdateConfigurationReq (UeConfig params) = 0;
+
+  /**
+   * Adds pool information for the given group
+   * \param group The Destination L2 ID
+   * \param pool The pool information
+   */
+  virtual void AddPool (uint32_t group, Ptr<SidelinkCommResourcePool> pool) = 0;
+  
+  /**
+   * Adds pool information for the given group
+   * \param group The Destination L2 ID
+   */
+  virtual void RemovePool (uint32_t group) = 0;
 
 
   /**

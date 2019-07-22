@@ -18,6 +18,7 @@
  * Author: Jaume Nin <jnin@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
  *         Manuel Requena <manuel.requena@cttc.es>
+ * Modified by: NIST
  */
 
 #ifndef POINT_TO_POINT_EPC_HELPER_H
@@ -30,6 +31,7 @@
 #include <ns3/epc-tft.h>
 #include <ns3/eps-bearer.h>
 #include <ns3/epc-helper.h>
+#include <ns3/lte-sl-tft.h>
 
 namespace ns3 {
 
@@ -77,6 +79,13 @@ public:
   virtual void AddUe (Ptr<NetDevice> ueLteDevice, uint64_t imsi);
   virtual void AddX2Interface (Ptr<Node> enbNode1, Ptr<Node> enbNode2);
   virtual uint8_t ActivateEpsBearer (Ptr<NetDevice> ueLteDevice, uint64_t imsi, Ptr<EpcTft> tft, EpsBearer bearer);
+  //communication
+  virtual void ActivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft);
+  virtual void DeactivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft);
+  //discovery
+  virtual void StartDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx);
+  virtual void StopDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx);
+
   virtual Ptr<Node> GetPgwNode ();
   virtual Ipv4InterfaceContainer AssignUeIpv4Address (NetDeviceContainer ueDevices);
   Ipv6InterfaceContainer AssignUeIpv6Address (NetDeviceContainer ueDevices);

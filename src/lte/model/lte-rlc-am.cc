@@ -17,6 +17,7 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
+ * Modified by : NIST (D2D)
  */
 
 #include "ns3/simulator.h"
@@ -267,6 +268,8 @@ LteRlcAm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
       params.pdu = packet;
       params.rnti = m_rnti;
       params.lcid = m_lcid;
+      params.srcL2Id = m_srcL2Id;
+      params.dstL2Id = m_dstL2Id;
       params.layer = layer;
       params.harqProcessId = harqId;
       params.componentCarrierId = componentCarrierId;
@@ -353,6 +356,8 @@ LteRlcAm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
                   params.pdu = packet;
                   params.rnti = m_rnti;
                   params.lcid = m_lcid;
+                  params.srcL2Id = m_srcL2Id;
+                  params.dstL2Id = m_dstL2Id;
                   params.layer = layer;
                   params.harqProcessId = harqId;
                   params.componentCarrierId = componentCarrierId;
@@ -734,6 +739,8 @@ LteRlcAm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
   params.pdu = packet;
   params.rnti = m_rnti;
   params.lcid = m_lcid;
+  params.srcL2Id = m_srcL2Id;
+  params.dstL2Id = m_dstL2Id;
   params.layer = layer;
   params.harqProcessId = harqId;
   params.componentCarrierId = componentCarrierId;
@@ -1600,6 +1607,8 @@ LteRlcAm::DoReportBufferStatus (void)
   LteMacSapProvider::ReportBufferStatusParameters r;
   r.rnti = m_rnti;
   r.lcid = m_lcid;
+  r.srcL2Id = m_srcL2Id;
+  r.dstL2Id = m_dstL2Id;
   r.txQueueSize = m_txonBufferSize;
   r.txQueueHolDelay = txonQueueHolDelay.GetMilliSeconds ();
   r.retxQueueSize = m_retxBufferSize + m_txedBufferSize;

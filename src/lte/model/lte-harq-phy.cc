@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo  <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -47,6 +48,7 @@ LteHarqPhy::~LteHarqPhy ()
 {
   m_miDlHarqProcessesInfoMap.clear ();
   m_miUlHarqProcessesInfoMap.clear ();
+  m_miSlHarqProcessesInfoMap.clear ();
 }
 
 
@@ -198,6 +200,49 @@ LteHarqPhy::UpdateUlHarqProcessStatus (uint16_t rnti, double mi, uint16_t infoBy
 }
 
 void
+LteHarqPhy::UpdateUlHarqProcessStatus (uint16_t rnti, double sinr)
+{
+  NS_LOG_FUNCTION (this << rnti << sinr);
+  std::map <uint16_t, std::vector <HarqProcessInfoList_t> >::iterator it;
+  it = m_miUlHarqProcessesInfoMap.find (rnti);
+  if (it==m_miUlHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      std::vector <HarqProcessInfoList_t> harqList;
+      harqList.resize (8);
+      HarqProcessInfoElement_t el;
+      el.m_mi = 0;
+      el.m_infoBits = 0;
+      el.m_codeBits = 0;
+      el.m_sinr = sinr;
+      harqList.at (7).push_back (el);
+      m_miUlHarqProcessesInfoMap.insert (std::pair <uint16_t, std::vector <HarqProcessInfoList_t> > (rnti, harqList));
+    }
+  else
+    {
+      if ((*it).second.at (7).size () == 3) // MAX HARQ RETX
+        {
+          // HARQ should be disabled -> discard info
+          return;
+        }
+
+      //Bug 731: move current status back to the end
+      HarqProcessInfoList_t list = (*it).second.at (0);
+      for (uint8_t i = 0; i < list.size (); i++)
+        {
+          (*it).second.at (7).push_back (list.at (i));
+        }      
+
+      HarqProcessInfoElement_t el;
+      el.m_mi = 0;
+      el.m_infoBits = 0;
+      el.m_codeBits = 0;
+      el.m_sinr = sinr;
+      (*it).second.at (7).push_back (el);
+    }
+}
+
+void
 LteHarqPhy::ResetUlHarqProcessStatus (uint16_t rnti, uint8_t id)
 {
   NS_LOG_FUNCTION (this << rnti << (uint16_t)id);
@@ -214,6 +259,373 @@ LteHarqPhy::ResetUlHarqProcessStatus (uint16_t rnti, uint8_t id)
     {
       (*it).second.at (id).clear ();
     }
+}
+
+double
+LteHarqPhy::GetAccumulatedMiSl (uint16_t rnti, uint8_t l1dst)
+{
+  NS_LOG_FUNCTION (this << rnti);
+
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  it = m_miSlHarqProcessesInfoMap.find (rnti);
+  NS_ASSERT_MSG (it!=m_miSlHarqProcessesInfoMap.end (), " Does not find MI for RNTI");
+  std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+  it2 = it->second.find (l1dst);
+  NS_ASSERT_MSG (it2!=it->second.end (), " Does not find MI for l1dst ");
+  HarqProcessInfoList_t list = (*it2).second;
+  double mi = 0.0;
+  for (uint8_t i = 0; i < list.size (); i++)
+    {
+      mi += list.at (i).m_mi;
+    }
+  return (mi);
+}
+
+HarqProcessInfoList_t
+LteHarqPhy::GetHarqProcessInfoSl (uint16_t rnti, uint8_t l1dst)
+{
+  NS_LOG_FUNCTION (this << rnti << (uint16_t)l1dst);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  it = m_miSlHarqProcessesInfoMap.find (rnti);
+  if (it==m_miSlHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+      m_miSlHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+      return (harqInfo);
+    }
+  else
+    {
+      //entry here, check ls1dst
+      std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+      it2 = it->second.find (l1dst);
+      if (it2==it->second.end ())
+        {
+          HarqProcessInfoList_t harqInfo;
+          std::map <uint8_t, HarqProcessInfoList_t> map;
+          it->second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+          return (harqInfo);
+        }
+      else
+        {
+          return ((*it2).second);
+        }
+    }
+}
+
+HarqProcessInfoList_t
+LteHarqPhy::GetHarqProcessInfoSlV2X (uint16_t rnti)
+{
+  NS_LOG_FUNCTION (this << rnti);
+  std::map <uint16_t, HarqProcessInfoList_t>::iterator it;
+  it = m_miSlV2XHarqProcessesInfoMap.find (rnti);
+
+  // new entry
+  HarqProcessInfoList_t harqInfo;
+  m_miSlV2XHarqProcessesInfoMap.insert (std::pair <uint16_t, HarqProcessInfoList_t> (rnti, harqInfo));
+  return (harqInfo);
+}
+
+HarqProcessInfoList_t
+LteHarqPhy::GetHarqProcessInfoDisc (uint16_t rnti, uint8_t resPsdch)
+{
+  NS_LOG_FUNCTION (this << rnti << (uint16_t)resPsdch);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  it = m_miDiscHarqProcessesInfoMap.find (rnti);
+  if (it==m_miDiscHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (resPsdch, harqInfo));
+      m_miDiscHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+      return (harqInfo);
+    }
+  else
+    {
+      //entry here, check ls1dst
+      std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+      it2 = it->second.find (resPsdch);
+      if (it2==it->second.end ())
+        {
+          HarqProcessInfoList_t harqInfo;
+          std::map <uint8_t, HarqProcessInfoList_t> map;
+          it->second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (resPsdch, harqInfo));
+          return (harqInfo);
+        }
+      else
+        {
+          return ((*it2).second);
+        }
+    }
+}
+
+void
+LteHarqPhy::UpdateSlHarqProcessStatus (uint16_t rnti, uint8_t l1dst, double mi, uint16_t infoBytes, uint16_t codeBytes)
+{
+  NS_LOG_FUNCTION (this << rnti << mi);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+  
+  it = m_miSlHarqProcessesInfoMap.find (rnti);
+  if (it==m_miSlHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      HarqProcessInfoElement_t el;
+      el.m_mi = mi;
+      el.m_infoBits = infoBytes * 8;
+      el.m_codeBits = codeBytes * 8;
+      harqInfo.push_back (el);
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+      m_miSlHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+    }
+  else
+    {
+      it2 = it->second.find (l1dst);
+      if (it2 == it->second.end())
+        {
+          // new entry
+          HarqProcessInfoList_t harqInfo;
+          HarqProcessInfoElement_t el;
+          el.m_mi = mi;
+          el.m_infoBits = infoBytes * 8;
+          el.m_codeBits = codeBytes * 8;
+          harqInfo.push_back (el);
+          (*it).second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+        }
+      else
+        {
+          if ((*it2).second.size () == 3) // MAX HARQ RETX
+            {
+              // HARQ should be disabled -> discard info
+              return;
+            }
+          HarqProcessInfoElement_t el;
+          el.m_mi = mi;
+          el.m_infoBits = infoBytes * 8;
+          el.m_codeBits = codeBytes * 8;
+          (*it2).second.push_back (el);
+        }
+    }
+}
+
+void
+LteHarqPhy::UpdateSlHarqProcessStatus (uint16_t rnti, uint8_t l1dst, double sinr)
+{
+  NS_LOG_FUNCTION (this << rnti << sinr);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+  
+  it = m_miSlHarqProcessesInfoMap.find (rnti);
+  if (it==m_miSlHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      HarqProcessInfoElement_t el;
+      el.m_mi = 0;
+      el.m_infoBits = 0;
+      el.m_codeBits = 0;
+      el.m_sinr = sinr;
+      harqInfo.push_back (el);
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+      m_miSlHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+    }
+  else
+    {
+      it2 = it->second.find (l1dst);
+      if (it2 == it->second.end())
+        {
+          // new entry
+          HarqProcessInfoList_t harqInfo;
+          HarqProcessInfoElement_t el;
+          el.m_mi = 0;
+          el.m_infoBits = 0;
+          el.m_codeBits = 0;
+          el.m_sinr = sinr;
+          harqInfo.push_back (el);
+          (*it).second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+        }
+      else
+        {
+          if ((*it2).second.size () == 3) // MAX HARQ RETX
+            {
+              // HARQ should be disabled -> discard info
+              return;
+            }
+          HarqProcessInfoElement_t el;
+          el.m_mi = 0;
+          el.m_infoBits = 0;
+          el.m_codeBits = 0;
+          el.m_sinr = sinr;
+          (*it2).second.push_back (el);
+        }
+    }
+}
+
+void
+LteHarqPhy::UpdateSlV2XHarqProcessStatus (uint16_t rnti, double mi, uint16_t infoBytes, uint16_t codeBytes)
+{
+  NS_LOG_FUNCTION (this << rnti << mi);
+  std::map <uint16_t, HarqProcessInfoList_t>::iterator it;
+
+  it = m_miSlV2XHarqProcessesInfoMap.find (rnti);
+  // new entry
+  HarqProcessInfoList_t harqInfo;
+  HarqProcessInfoElement_t el;
+  el.m_mi = mi;
+  el.m_infoBits = infoBytes * 8;
+  el.m_codeBits = codeBytes * 8;
+  harqInfo.push_back (el);
+  m_miSlV2XHarqProcessesInfoMap.insert (std::pair <uint16_t, HarqProcessInfoList_t> (rnti, harqInfo));
+}
+
+void
+LteHarqPhy::UpdateSlV2XHarqProcessStatus (uint16_t rnti, double sinr)
+{
+  NS_LOG_FUNCTION (this << rnti << sinr);
+  std::map <uint16_t, HarqProcessInfoList_t>::iterator it;
+
+
+  it = m_miSlV2XHarqProcessesInfoMap.find (rnti);
+  // new entry
+  HarqProcessInfoList_t harqInfo;
+  HarqProcessInfoElement_t el;
+  el.m_mi = 0;
+  el.m_infoBits = 0;
+  el.m_codeBits = 0;
+  el.m_sinr = sinr;
+  harqInfo.push_back (el);
+  m_miSlV2XHarqProcessesInfoMap.insert (std::pair <uint16_t, HarqProcessInfoList_t> (rnti, harqInfo));
+}
+
+void
+LteHarqPhy::UpdateDiscHarqProcessStatus (uint16_t rnti, uint8_t resPsdch, double sinr )
+{
+  NS_LOG_FUNCTION (this << rnti << sinr);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+  
+  it = m_miDiscHarqProcessesInfoMap.find (rnti);
+  if (it==m_miDiscHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      HarqProcessInfoElement_t el;
+      el.m_mi = 0;
+      el.m_infoBits = 0;
+      el.m_codeBits = 0;
+      el.m_sinr = sinr;
+      harqInfo.push_back (el);
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (resPsdch, harqInfo));
+      m_miDiscHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+    }
+  else
+    {
+      it2 = it->second.find (resPsdch);
+      if (it2 == it->second.end())
+        {
+          // new entry
+          HarqProcessInfoList_t harqInfo;
+          HarqProcessInfoElement_t el;
+          el.m_mi = 0;
+          el.m_infoBits = 0;
+          el.m_codeBits = 0;
+          el.m_sinr = sinr;
+          harqInfo.push_back (el);
+          (*it).second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (resPsdch, harqInfo));
+        }
+      else
+        {
+          if ((*it2).second.size () == m_discNumRetx) // MAX HARQ RETX
+            {
+              //std::cout << "numRetx=" << (uint16_t)m_discNumRetx << std::endl;
+              // HARQ should be disabled -> discard info
+              return;
+            }
+          HarqProcessInfoElement_t el;
+          el.m_mi = 0;
+          el.m_infoBits = 0;
+          el.m_codeBits = 0;
+          el.m_sinr = sinr;
+          (*it2).second.push_back (el);
+        }
+    }
+}
+
+
+void
+LteHarqPhy::ResetSlHarqProcessStatus (uint16_t rnti, uint8_t l1dst)
+{
+  NS_LOG_FUNCTION (this << rnti << (uint16_t)l1dst);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+  it = m_miSlHarqProcessesInfoMap.find (rnti);
+  if (it==m_miSlHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+      m_miSlHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+    }
+  else
+    {
+      it2 = (*it).second.find (l1dst);
+      if (it2 == (*it).second.end())
+        {
+          HarqProcessInfoList_t harqInfo;
+          std::map <uint8_t, HarqProcessInfoList_t> map;
+          it->second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (l1dst, harqInfo));
+        }
+      else
+        {
+          (*it2).second.clear ();
+        }
+    }
+}
+
+void
+LteHarqPhy::ResetDiscHarqProcessStatus (uint16_t rnti, uint8_t resPsdch)
+{
+  NS_LOG_FUNCTION (this << rnti << (uint16_t)resPsdch);
+  std::map <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> >::iterator it;
+  std::map <uint8_t, HarqProcessInfoList_t>::iterator it2;
+  it = m_miDiscHarqProcessesInfoMap.find (rnti);
+  if (it==m_miDiscHarqProcessesInfoMap.end ())
+    {
+      // new entry
+      HarqProcessInfoList_t harqInfo;
+      std::map <uint8_t, HarqProcessInfoList_t> map;
+      map.insert (std::pair <uint8_t, HarqProcessInfoList_t> (resPsdch, harqInfo));
+      m_miDiscHarqProcessesInfoMap.insert (std::pair <uint16_t, std::map <uint8_t, HarqProcessInfoList_t> > (rnti, map));
+    }
+  else
+    {
+      it2 = (*it).second.find (resPsdch);
+      if (it2 == (*it).second.end())
+        {
+          HarqProcessInfoList_t harqInfo;
+          std::map <uint8_t, HarqProcessInfoList_t> map;
+          it->second.insert (std::pair <uint8_t, HarqProcessInfoList_t> (resPsdch, harqInfo));
+        }
+      else
+        {
+          (*it2).second.clear ();
+        }
+    }
+}
+
+void
+LteHarqPhy::SetDiscNumRetx (uint8_t retx)
+{
+  NS_LOG_FUNCTION (this << retx);
+  m_discNumRetx = retx;
 }
 
 

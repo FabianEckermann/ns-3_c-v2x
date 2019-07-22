@@ -16,6 +16,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #ifndef LTE_UE_CMAC_SAP_H
@@ -25,6 +28,8 @@
 #include <ns3/ff-mac-common.h>
 #include <ns3/eps-bearer.h>
 #include <ns3/lte-common.h>
+#include <ns3/sl-pool.h>
+#include <ns3/lte-control-messages.h>
 
 namespace ns3 {
 
@@ -93,12 +98,30 @@ public:
    */
   virtual void AddLc (uint8_t lcId, LogicalChannelConfig lcConfig, LteMacSapUser* msu) = 0;
 
+  /**
+   * add a new Logical Channel (LC) used for Sidelink communication
+   *
+   * \param lcId the ID of the LC
+   * \param lcConfig the LC configuration provided by the RRC
+   * \param msu the corresponding LteMacSapUser
+   */
+  virtual void AddLc (uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id, LogicalChannelConfig lcConfig, LteMacSapUser* msu) = 0;
+  
+
   /** 
    * remove an existing LC
    * 
    * \param lcId 
    */
   virtual void RemoveLc (uint8_t lcId) = 0;
+
+  /**
+   * remove an existing LC
+   *
+   * \param lcId
+   */
+  virtual void RemoveLc (uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id) = 0;
+  
 
   /** 
    * reset the MAC
@@ -111,6 +134,92 @@ public:
    * \param rnti the cell-specific UE identifier
    */
   virtual void SetRnti (uint16_t rnti) = 0;
+
+  /**
+   * add a sidelink transmission pool for the given destination
+   * \param dstL2Id the destination
+   * \param pool the transmission pool
+   */
+  virtual void AddSlTxPool (uint32_t dstL2Id, Ptr<SidelinkTxCommResourcePool> pool) = 0;
+
+  /**
+   * add a sidelink V2X transmission pool for the given destination
+   * \param dstL2Id the destination
+   * \param pool the transmission pool
+   */
+  virtual void AddSlV2xTxPool(uint32_t dstL2Id, Ptr<SidelinkTxCommResourcePoolV2x> pool) = 0;
+
+  /**
+   * remove the sidelink transmission pool for the given destination
+   * \param dstL2Id the destination
+   */
+  virtual void RemoveSlTxPool (uint32_t dstL2Id) = 0;
+
+  /**
+   * remove the sidelink V2X transmission pool for the given destination
+   * \param dstL2Id the destination
+   */
+  virtual void RemoveSlV2xTxPool (uint32_t dstL2Id) = 0;
+
+  /**
+   * set the sidelink receiving pools
+   * \param pools the sidelink receiving pools
+   */
+  virtual void SetSlRxPools (std::list<Ptr<SidelinkRxCommResourcePool> > pools) = 0;
+
+  /**
+   * set the sidelink V2X receiving pools
+   * \param pools the sidelink receiving pools
+   */
+  virtual void SetSlV2xRxPools (std::list<Ptr<SidelinkRxCommResourcePoolV2x> > pools) = 0;
+
+  /**
+   * add a new destination to listen for
+   * \param a destination to listen for
+   */
+  virtual void AddSlDestination (uint32_t destination) = 0;
+
+  /**
+   * remove a destination to listen for
+   * \param destination the destination that is no longer of interest
+   */
+  virtual void RemoveSlDestination (uint32_t destination) = 0;
+
+  /**
+   * add a sidelink discovery pool 
+   * \param res discovery resources
+   * \param pool the transmission pool
+   */  
+  virtual void AddSlTxPool (Ptr<SidelinkTxDiscResourcePool> pool) = 0;
+
+  /**
+   * remove the sidelink discovery pool 
+   */
+  virtual void RemoveSlTxPool () = 0;
+
+  /**
+   * set the sidelink discovery receiving pools
+   * \param pools the sidelink discovery receiving pools
+   */
+  virtual void SetSlRxPools (std::list<Ptr<SidelinkRxDiscResourcePool> > pools) = 0;
+  
+  /**
+   * Push announcing applications to MAC 
+   * \param apps applications to announce
+   */
+  virtual void ModifyDiscTxApps (std::list<uint32_t> apps) = 0;
+ 
+  /**
+   * Push monitoring applications to MAC 
+   * \params apps applications to monitor
+   */
+  virtual void ModifyDiscRxApps (std::list<uint32_t> apps) = 0;
+
+  /**
+   *  added function to handle priority in UL scheduling 
+   *
+   */
+  virtual void AddLCPriority (uint8_t rnti, uint8_t lcid ,uint8_t  priority) = 0;
 
 };
 
@@ -145,6 +254,25 @@ public:
    * 
    */
   virtual void NotifyRandomAccessFailed () = 0;
+
+  /**
+   * Notify the RRC that the MAC has detected a new incoming flow for sidelink reception
+   */
+  virtual void NotifySidelinkReception (uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id) = 0;
+
+  /**
+   * Notify the RRC that the MAC has data to send in the PSSCH
+   */
+  virtual void NotifyMacHasSlDataToSend () = 0;
+  /**
+   * Notify the RRC that the MAC does not have data to send in the PSSCH
+   */
+  virtual void NotifyMacHasNotSlDataToSend () = 0;
+
+  /**
+   * Notify the RRC that the MAC has detected a new incoming flow for discovery reception
+   */
+  virtual void NotifyDiscoveryReception (Ptr<LteControlMessage> msg) = 0;
 };
 
 

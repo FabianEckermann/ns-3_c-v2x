@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef LTE_MAC_SAP_H
@@ -50,6 +51,9 @@ public:
     uint8_t     layer; /**< the layer value that was passed by the MAC in the call to NotifyTxOpportunity that generated this PDU */
     uint8_t     harqProcessId; /**< the HARQ process id that was passed by the MAC in the call to NotifyTxOpportunity that generated this PDU */
     uint8_t componentCarrierId; /**< the component carrier id corresponding to the sending Mac istance */
+    /* Additional identifier for sidelink */
+    uint32_t srcL2Id;  /**< Source L2 ID (24 bits) */
+    uint32_t dstL2Id;  /**< Destination L2 ID (24 bits) */
   };
 
   /**
@@ -73,6 +77,9 @@ public:
     uint32_t retxQueueSize;  /**<  the current size of the RLC retransmission queue in bytes */
     uint16_t retxQueueHolDelay;  /**<  the Head Of Line delay of the retransmission queue */
     uint16_t statusPduSize;  /**< the current size of the pending STATUS RLC  PDU message in bytes */
+    /* Additional identifier for sidelink */
+    uint32_t srcL2Id;  /**< Source L2 ID (24 bits) */
+    uint32_t dstL2Id;  /**< Destination L2 ID (24 bits) */
   };
 
   /**
@@ -96,6 +103,7 @@ class LteMacSapUser
 {
 public:
   virtual ~LteMacSapUser ();
+
   /**
    * Called by the MAC to notify the RLC that the scheduler granted a
    * transmission opportunity to this RLC instance.

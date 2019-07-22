@@ -17,6 +17,9 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>,
  *         Marco Miozzo <mmiozzo@cttc.es>
+ * Modified by: NIST (D2D)
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #ifndef LTE_UE_CPHY_SAP_H
@@ -26,6 +29,7 @@
 #include <ns3/ptr.h>
 
 #include <ns3/lte-rrc-sap.h>
+#include <ns3/sl-pool.h>
 
 namespace ns3 {
 
@@ -144,6 +148,112 @@ public:
    */
   virtual void SetPa (double pa) = 0;
 
+//discovery
+  /**
+   * set the current discovery transmit pool
+   * \param pool the transmission pool
+   */
+  virtual void SetSlTxPool (Ptr<SidelinkTxDiscResourcePool> pool) = 0;
+
+  /**
+   * remove the discovery transmission pool 
+   */
+  virtual void RemoveSlTxPool (bool disc) = 0;
+
+  /**
+   * set the discovery receiving pools
+   * \param pools the receiving pools
+   */
+  virtual void SetSlRxPools (std::list<Ptr<SidelinkRxDiscResourcePool> > pools) = 0;
+
+  /**
+   * set discovery annoucement apps
+   * \param apps applications we are interested in announcing
+   */
+  virtual void AddDiscTxApps (std::list<uint32_t> apps) = 0;
+
+  /**
+   * set discovery monitoring apps
+   * \param apps applications we are interested in monitoring
+   */
+  virtual void AddDiscRxApps (std::list<uint32_t> apps) = 0;
+
+
+  /**
+   * Set grant for discovery
+   */
+  virtual void SetDiscGrantInfo (uint8_t resPsdch) = 0;
+
+//communication
+  /**
+   * set the current sidelink transmit pool
+   * \param pool the transmission pool
+   */
+  virtual void SetSlTxPool (Ptr<SidelinkTxCommResourcePool> pool) = 0;
+
+  /**
+   * set the current sidelink transmit pool
+   * \param pool the transmission pool
+   */
+  virtual void SetSlV2xTxPool (Ptr<SidelinkTxCommResourcePoolV2x> pool) = 0;
+
+  /**
+   * remove the sidelink transmission pool 
+   * \param dstL2Id the destination
+   */
+  virtual void RemoveSlTxPool () = 0;
+
+  /**
+   * remove the sidelink transmission pool 
+   * \param dstL2Id the destination
+   */
+  virtual void RemoveSlV2xTxPool () = 0;
+
+  /**
+   * set the sidelink receiving pools
+   * \param destinations The list of destinations (group) to monitor
+   * \param pools the sidelink receiving pools
+   */
+  virtual void SetSlRxPools (std::list<Ptr<SidelinkRxCommResourcePool> > pools) = 0;
+
+  /**
+   * set the sidelink receiving pools
+   * \param destinations The list of destinations (group) to monitor
+   * \param pools the sidelink receiving pools
+   */
+  virtual void SetSlV2xRxPools (std::list<Ptr<SidelinkRxCommResourcePoolV2x> > pools) = 0;
+
+  /**
+   * add a new destination to listen for
+   * \param a destination to listen for
+   */
+  virtual void AddSlDestination (uint32_t destination) = 0;
+
+  /**
+   * remove a destination to listen for
+   * \param destination the destination that is no longer of interest
+   */
+  virtual void RemoveSlDestination (uint32_t destination) = 0;
+  
+  /**
+   * Pass to the PHY entity the SLSSID to be set
+   * \param slssid the SLSSID
+   */
+  virtual void SetSlssId (uint64_t slssid) = 0;
+
+  /**
+    * Pass to the PHY entity a SLSS to be sent
+    * \param mibSl the MIB-SL to send
+    */
+  virtual void SendSlss (LteRrcSap::MasterInformationBlockSL mibSl) = 0;
+  
+  /**
+   * Notify the PHY entity that a SyncRef has been selected and that it should apply
+   * the corresponding change of timing when appropriate
+   * \param mibSl the MIB-SL containing the information of the selected SyncRef
+   */
+  virtual void SynchronizeToSyncRef (LteRrcSap::MasterInformationBlockSL mibSl) = 0;
+
 };
 
 
@@ -181,6 +291,22 @@ public:
     uint8_t m_componentCarrierId; ///< component carrier ID
   };
 
+  /**
+   * Parameters for reporting S-RSRP measurements to the RRC by the PHY
+   */
+  struct UeSlssMeasurementReportElement
+  {
+    uint16_t m_slssid; ///< SLSSID of the measured SyncRef
+    double m_srsrp;  ///< Measured S-RSRP [dBm]
+    uint16_t m_offset; ///< Reception offset
+  };
+  /**
+   * List of SLSS measurements to be reported to the RRC by the PHY
+   */
+  struct UeSlssMeasurementsParameters
+  {
+    std::vector <struct UeSlssMeasurementReportElement> m_ueSlssMeasurementsList; ///< List of SLSS measurements to be reported to the RRC by the PHY
+  };
 
   /**
    * \brief Relay an MIB message from the PHY entity to the RRC layer.
@@ -210,6 +336,38 @@ public:
    * \param params the structure containing a vector of cellId, RSRP and RSRQ
    */
   virtual void ReportUeMeasurements (UeMeasurementsParameters params) = 0;
+
+  /**
+    * \brief Send a report of S-RSRP values perceived from SLSSs by the PHY
+    *        entity (after applying layer-1 filtering) to the RRC layer.
+    * \param params the structure containing a list of
+    *        (SyncRef SLSSID, SyncRef offset and S-RSRP value)
+    * \param slssid the SLSSID of the evaluated SyncRef if corresponding
+    * \param offset the offset of the evaluated SyncRef if corresponding
+    */
+  virtual void ReportSlssMeasurements (LteUeCphySapUser::UeSlssMeasurementsParameters params,  uint64_t slssid, uint16_t offset) = 0;
+  
+  /**
+   * The PHY indicated to the RRC the current subframe indication
+   * \param frameNo the current frameNo
+   * \param subFrameNo the current subframeNo
+   */
+  virtual void ReportSubframeIndication (uint16_t frameNo, uint16_t subFrameNo) = 0;
+  
+  /**
+   * The PHY pass a received MIB-SL to the RRC
+   * \param mibSl the received MIB-SL
+   */
+  virtual void ReceiveMibSL (LteRrcSap::MasterInformationBlockSL mibSl) = 0;
+  
+  /**
+   * Notify the successful change of timing/SyncRef, and store the selected
+   * (current) SyncRef information
+   * \param mibSl the SyncRef MIB-SL containing its information
+   * \param frameNo the current frameNo
+   * \param subFrameNo the current subframeNo
+   */
+  virtual void ReportChangeOfSyncRef (LteRrcSap::MasterInformationBlockSL mibSl, uint16_t frameNo, uint16_t subFrameNo) = 0;
 
 };
 
@@ -244,6 +402,27 @@ public:
   virtual void SetTransmissionMode (uint8_t txMode);
   virtual void SetSrsConfigurationIndex (uint16_t srcCi);
   virtual void SetPa (double pa);
+  //discovery
+  virtual void SetSlTxPool (Ptr<SidelinkTxDiscResourcePool> pool);
+  virtual void RemoveSlTxPool (bool disc);
+  virtual void SetSlRxPools (std::list<Ptr<SidelinkRxDiscResourcePool> > pools);
+  virtual void SetDiscGrantInfo (uint8_t resPsdch);
+  virtual void AddDiscTxApps (std::list<uint32_t> apps);
+  virtual void AddDiscRxApps (std::list<uint32_t> apps);
+  //communication
+  virtual void SetSlTxPool (Ptr<SidelinkTxCommResourcePool> pool);
+  virtual void RemoveSlTxPool ();
+  virtual void SetSlRxPools (std::list<Ptr<SidelinkRxCommResourcePool> > pools);
+  virtual void AddSlDestination (uint32_t destination);
+  virtual void RemoveSlDestination (uint32_t destination);
+  virtual void SetSlssId (uint64_t slssid);
+  virtual void SendSlss (LteRrcSap::MasterInformationBlockSL mibSl);
+  virtual void SynchronizeToSyncRef (LteRrcSap::MasterInformationBlockSL mibSl);
+  //V2X
+  virtual void SetSlV2xTxPool (Ptr<SidelinkTxCommResourcePoolV2x> pool);
+  virtual void RemoveSlV2xTxPool ();
+  virtual void SetSlV2xRxPools (std::list<Ptr<SidelinkRxCommResourcePoolV2x> > pools);
+
 
 private:
   MemberLteUeCphySapProvider ();
@@ -338,6 +517,116 @@ MemberLteUeCphySapProvider<C>::SetPa (double pa)
   m_owner->DoSetPa (pa);
 }
 
+//discovery
+template <class C>
+void MemberLteUeCphySapProvider<C>::SetSlTxPool (Ptr<SidelinkTxDiscResourcePool> pool)
+{
+  m_owner->DoSetSlTxPool (pool);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::RemoveSlTxPool (bool disc)
+{
+  m_owner->DoRemoveSlTxPool (disc);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::SetSlRxPools (std::list<Ptr<SidelinkRxDiscResourcePool> > pools)
+{
+  m_owner->DoSetSlRxPools (pools);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::SetDiscGrantInfo (uint8_t resPsdch) 
+{
+  m_owner->DoSetDiscGrantInfo (resPsdch);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::AddDiscTxApps (std::list<uint32_t> apps)
+{
+  m_owner->DoAddDiscTxApps (apps);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::AddDiscRxApps (std::list<uint32_t> apps)
+{
+  m_owner->DoAddDiscRxApps (apps);
+}
+
+
+//communication
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::SetSlTxPool (Ptr<SidelinkTxCommResourcePool> pool)
+{
+  m_owner->DoSetSlTxPool (pool);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::RemoveSlTxPool ()
+{
+  m_owner->DoRemoveSlTxPool ();
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::SetSlRxPools (std::list<Ptr<SidelinkRxCommResourcePool> > pools)
+{
+  m_owner->DoSetSlRxPools (pools);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::AddSlDestination (uint32_t destination)
+{
+  m_owner->DoAddSlDestination (destination);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::RemoveSlDestination (uint32_t destination)
+{
+  m_owner->DoRemoveSlDestination (destination);
+}
+
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::SetSlssId (uint64_t slssid)
+{
+  m_owner->DoSetSlssId (slssid);
+}
+
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::SendSlss (LteRrcSap::MasterInformationBlockSL mibSl)
+{
+  m_owner->DoSendSlss (mibSl);
+}
+
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::SynchronizeToSyncRef (LteRrcSap::MasterInformationBlockSL mibSl)
+{
+  m_owner->DoSynchronizeToSyncRef (mibSl);
+}
+
+// V2X communication
+template <class C>
+void
+MemberLteUeCphySapProvider<C>::SetSlV2xTxPool (Ptr<SidelinkTxCommResourcePoolV2x> pool)
+{
+  m_owner->DoSetSlV2xTxPool (pool);
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::RemoveSlV2xTxPool ()
+{
+  m_owner->DoRemoveSlV2xTxPool ();
+}
+
+template <class C>
+void MemberLteUeCphySapProvider<C>::SetSlV2xRxPools (std::list<Ptr<SidelinkRxCommResourcePoolV2x> > pools)
+{
+  m_owner->DoSetSlV2xRxPools (pools);
+}
 
 /**
  * Template for the implementation of the LteUeCphySapUser as a member
@@ -361,6 +650,12 @@ public:
   virtual void RecvSystemInformationBlockType1 (uint16_t cellId,
                                                 LteRrcSap::SystemInformationBlockType1 sib1);
   virtual void ReportUeMeasurements (LteUeCphySapUser::UeMeasurementsParameters params);
+
+  virtual void ReportSlssMeasurements (LteUeCphySapUser::UeSlssMeasurementsParameters params,  uint64_t slssid, uint16_t offset);
+  virtual void ReportSubframeIndication (uint16_t frameNo, uint16_t subFrameNo);
+  virtual void ReceiveMibSL (LteRrcSap::MasterInformationBlockSL mibSL);
+  virtual void ReportChangeOfSyncRef (LteRrcSap::MasterInformationBlockSL mibSL, uint16_t frameNo, uint16_t subFrameNo);
+
 
 private:
   MemberLteUeCphySapUser ();
@@ -401,6 +696,34 @@ MemberLteUeCphySapUser<C>::ReportUeMeasurements (LteUeCphySapUser::UeMeasurement
   m_owner->DoReportUeMeasurements (params);
 }
 
+template <class C>
+void
+MemberLteUeCphySapUser<C>::ReportSlssMeasurements (LteUeCphySapUser::UeSlssMeasurementsParameters params,  uint64_t slssid, uint16_t offset)
+{
+  m_owner->DoReportSlssMeasurements (params,  slssid, offset);
+}
+
+
+template <class C>
+void
+MemberLteUeCphySapUser<C>::ReportSubframeIndication (uint16_t frameNo, uint16_t subFrameNo)
+{
+  m_owner->DoReportSubframeIndication (frameNo, subFrameNo);
+}
+
+template <class C>
+void
+MemberLteUeCphySapUser<C>::ReceiveMibSL (LteRrcSap::MasterInformationBlockSL mibSL)
+{
+  m_owner->DoReceiveMibSL (mibSL);
+}
+
+template <class C>
+void
+MemberLteUeCphySapUser<C>::ReportChangeOfSyncRef (LteRrcSap::MasterInformationBlockSL mibSL, uint16_t frameNo, uint16_t subFrameNo)
+{
+  m_owner->DoReportChangeOfSyncRef (mibSL, frameNo, subFrameNo );
+}
 
 } // namespace ns3
 

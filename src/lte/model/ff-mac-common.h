@@ -16,6 +16,10 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ * 
+ * Modified by:
+ *          Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *          Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #ifndef FF_MAC_COMMON_H
@@ -24,6 +28,8 @@
 #include <ns3/simple-ref-count.h>
 #include <ns3/ptr.h>
 #include <vector>
+#include <bitset>
+#include <map>
 
 
 /**
@@ -155,6 +161,83 @@ struct UlDciListElement_s
   uint8_t   m_dai; ///< DAI
   uint8_t   m_freqHopping; ///< freq hopping
   int8_t    m_pdcchPowerOffset; ///< CCH power offset
+};
+
+/**
+ * \brief See section 5.3.3.1.9 Rel 12.4
+ */
+struct SlDciListElement_s
+{
+  uint16_t m_rnti;
+  uint16_t m_resPscch;
+  uint8_t m_tpc;
+  uint8_t m_hopping;
+  uint8_t m_rbStart; //models rb assignment
+  uint8_t m_rbLen;   //models rb assignment
+  uint8_t m_trp;
+};
+
+/**
+ * \brief See section 5.4.3.1.1 Rel 12.4
+ */
+struct SciListElement_s
+{
+  uint16_t  m_rnti;
+  uint8_t   m_resPscch;       //added for modeling
+  uint8_t   m_hopping;
+  uint8_t   m_rbStart; //models rb assignment
+  uint8_t   m_rbLen;   //models rb assignment
+  uint16_t  m_tbSize;  //added for modeling
+  uint8_t   m_trp;
+  uint8_t   m_mcs;
+  uint16_t  m_timing;
+  uint8_t   m_groupDstId;
+};
+ 
+/**
+ * \brief See 36.212 section 5.3.3.1.9A V15.0.1
+ * DCI format 5A is used for scheduling of PSCCH, and also contains 
+ * several SCI format 1 fields used for the scheduling of PSSCH
+ */
+struct SlDciListElementV2x 
+{
+  uint8_t m_CIF;                      // carrier indicator 
+  uint16_t m_firstSubchannelIdx;      // lowest index of the subchannel allocation to the inital transmission
+  uint16_t m_RIV;                     // frequency resource location of initial transmission and retransmission 
+  uint8_t m_SFgap;                    // time gap between initial transmission and retransmission
+  uint8_t m_slIndex;                  // SL index (present only for cases with TDD operation with uplink-downlink configuration 0-6)
+  uint8_t m_slSPSconfigIndex;         // SL SPS configuration index (present only when the format 5A CRC is scrambled with SL-SPS-V-RNTI)
+  uint8_t m_indicator;                // Activation/release indication (present only when the format 5A CRC is scrambled with SL-SPS-V-RNTI)
+}; 
+
+/**
+ * \brief See section 36.212 5.4.3.1.2 V15.0.1
+ * SCI format 1 is used for scheduling of PSSCH 
+ */
+struct SciListElementV2x  
+{
+  uint16_t m_rnti; 
+  uint8_t m_prio;                     // priority - 3 bits
+  uint16_t m_pRsvp;                    // resource reservation - 4 bits 
+  uint16_t m_riv;                     // frequency resource location of initial transmission and retransmission - ceil(log2(N_subCH(N_subCH+1)/2)) bits
+  uint8_t m_sfGap;                    // time gap between initial transmission and retransmission - 4 bits
+  uint8_t m_mcs;                      // modulation and coding scheme - 5 bits
+  uint8_t m_reTxIdx;                  // retransmission index - 1 bit
+  
+  uint16_t m_resPscch;           // added for modelling: resource where PSCCH occur (in subchannel)
+  uint16_t m_tbSize;                  // added for modelling: transferblock size
+};
+
+
+
+struct SlDiscMsg
+{
+  uint16_t  m_rnti; //added for modeling
+  uint8_t   m_resPsdch; //added for modeling
+  uint8_t m_msgType; 
+  std::bitset <184> m_proSeAppCode;
+  uint32_t m_mic;
+  uint8_t m_utcBasedCounter;
 };
 
 /**
@@ -325,6 +408,7 @@ struct MacCeValue_u
   uint8_t   m_phr; ///< phr
   uint8_t   m_crnti; ///< NRTI
   std::vector <uint8_t> m_bufferStatus; ///< buffer status
+  std::map <uint8_t, std::vector <uint8_t> > m_SlBufferStatus; ///< modified structure m_bufferStatus to handle UL different bearer scheduling
 };
 
 /**
@@ -336,7 +420,7 @@ struct MacCeListElement_s
   /// MAC CE type enum
   enum MacCeType_e
   {
-    BSR, PHR, CRNTI
+    BSR, PHR, CRNTI, SLBSR
   } m_macCeType; ///< MAC CE type
   struct MacCeValue_u m_macCeValue; ///< MAC CE value
 };

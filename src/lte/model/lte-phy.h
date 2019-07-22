@@ -247,6 +247,19 @@ protected:
    * child classes LteEnbPhy and LteUePhy.
    */
   double m_txPower;
+
+  /**
+   * Transmission power in dBm for PSSCH. Also available as attribute `TxPower` in the
+   * child classes LteEnbPhy and LteUePhy.
+   */
+  double m_txPowerPscch;
+  
+  /**
+   * Transmission power in dBm for PSSCH. Also available as attribute `TxPower` in the
+   * child classes LteEnbPhy and LteUePhy.
+   */
+  double m_txPowerPssch; 
+
   /**
    * Loss (dB) in the Signal-to-Noise-Ratio due to non-idealities in the
    * receiver. Also available as attribute `NoiseFigure` in the child classes

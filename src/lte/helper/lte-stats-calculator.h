@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Jaume Nin <jnin@cttc.es>
+ * Modified by: NIST
  */
 
 #ifndef LTE_STATS_CALCULATOR_H_
@@ -79,6 +80,58 @@ public:
    * @return the name of the file where the downlink statistics will be stored
    */
   std::string GetDlOutputFilename (void);
+
+  /**
+   * Set the name of the file where the sidelink ue mac statistics will be stored.
+   *
+   * \param outputFilename string with the name of the file
+   */
+  void SetSlUeOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the sidelink ue mac statistics will be stored.
+   * @return the name of the file where the uplink statistics will be stored
+   */
+  std::string GetSlUeOutputFilename (void);
+
+  /**
+   * Set the name of the file where the sidelink control channel ue statistics will be stored.
+   *
+   * \param outputFilename string with the name of the file
+   */
+  void SetSlPscchOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the sidelink control channel ue statistics will be stored.
+   * @return the name of the file where the uplink statistics will be stored
+   */
+  std::string GetSlPscchOutputFilename (void);
+
+  /**
+   * Set the name of the file where the sidelink shared channel ue mac statistics will be stored.
+   *
+   * \param outputFilename string with the name of the file
+   */
+  void SetSlSchUeOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the sidelink shared channel ue mac statistics will be stored.
+   * @return the name of the file where the uplink statistics will be stored
+   */
+  std::string GetSlSchUeOutputFilename (void);
+
+  /**
+   * Set the name of the file where the sidelink statistics will be stored.
+   *
+   * @param outputFilename string with the name of the file
+   */
+  void SetSlOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the sidelink statistics will be stored.
+   * @return the name of the file where the sidelink statistics will be stored
+   */
+  std::string GetSlOutputFilename (void);
 
   /**
    * Checks if there is an already stored IMSI for the given path
@@ -204,6 +257,26 @@ private:
    * Name of the file where the uplink results will be saved
    */
   std::string m_ulOutputFilename;
+
+  /**
+   * Name of the file where the sidelink results will be saved
+   */
+  std::string m_slOutputFilename;
+
+  /**
+   * Name of the file where the sidelink ue mac results will be saved
+   */
+  std::string m_slUeOutputFilename;
+
+  /**
+   * Name of the file where the sidelink control channel results will be saved
+   */
+  std::string m_slPscchOutputFilename;
+
+  /**
+   * Name of the file where the sidelink shared channel ue mac results will be saved
+   */
+  std::string m_slSchUeOutputFilename;
 };
 
 } // namespace ns3

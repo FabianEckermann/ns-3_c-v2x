@@ -19,6 +19,7 @@
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *          NIST (D2D)
  */
 
 #include "ns3/log.h"
@@ -1980,6 +1981,11 @@ RrcAsn1Header::SerializeMeasConfig (LteRrcSap::MeasConfig measConfig) const
 
       }
   }
+
+void
+RrcAsn1Header::SerializeSidelinkUeInformation (LteRrcSap::SidelinkUeInformation slUeInfo) const
+{
+}
 
 Buffer::Iterator
 RrcAsn1Header::DeserializeThresholdEutra (LteRrcSap::ThresholdEutra * thresholdEutra, Buffer::Iterator bIterator)
@@ -6770,6 +6776,71 @@ MeasurementReportHeader::GetMessage () const
 {
   LteRrcSap::MeasurementReport msg;
   msg = m_measurementReport;
+  return msg;
+}
+
+//////////////////// SidelinkInformationHeader class ////////////////////////
+
+
+SidelinkUeInformationHeader::SidelinkUeInformationHeader ()
+{
+}
+
+SidelinkUeInformationHeader::~SidelinkUeInformationHeader ()
+{
+}
+
+void
+SidelinkUeInformationHeader::PreSerialize () const
+{
+  m_serializationResult = Buffer ();
+
+  // Serialize DCCH message
+  SerializeUlDcchMessage (20);
+
+  // Serialize MeasurementReport sequence:
+  // no default or optional fields. Extension marker not present.
+  SerializeSequence (std::bitset<0> (),false);
+
+
+
+  // Finish serialization
+  FinalizeSerialization ();
+}
+
+uint32_t
+SidelinkUeInformationHeader::Deserialize (Buffer::Iterator bIterator)
+{
+  std::bitset<0> bitset0;
+
+  bIterator = DeserializeSequence (&bitset0,false,bIterator);
+
+  bIterator = DeserializeUlDcchMessage (bIterator);
+
+
+
+  return GetSerializedSize ();
+}
+
+void
+SidelinkUeInformationHeader::Print (std::ostream &os) const
+{
+  //os << "measId = " << (int)m_measurementReport.measResults.measId << std::endl;
+
+}
+
+void
+SidelinkUeInformationHeader::SetMessage (LteRrcSap::SidelinkUeInformation msg)
+{
+  m_sidelinkUeInformation = msg;
+  m_isDataSerialized = false;
+}
+
+LteRrcSap::SidelinkUeInformation
+SidelinkUeInformationHeader::GetMessage () const
+{
+  LteRrcSap::SidelinkUeInformation msg;
+  msg = m_sidelinkUeInformation;
   return msg;
 }
 

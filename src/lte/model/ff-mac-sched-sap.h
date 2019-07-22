@@ -310,6 +310,8 @@ public:
     std::vector <struct UlDciListElement_s> m_dciList; ///< DCI list
     std::vector <struct PhichListElement_s> m_phichList; ///< PHICH list
 
+    std::vector <struct SlDciListElement_s> m_sldciList; ///<SL DCI list
+
     std::vector <struct VendorSpecificListElement_s> m_vendorSpecificList; ///< vendor specific list
   };
 

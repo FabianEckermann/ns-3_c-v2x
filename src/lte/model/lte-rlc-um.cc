@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include "ns3/simulator.h"
@@ -387,6 +388,8 @@ LteRlcUm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
   params.pdu = packet;
   params.rnti = m_rnti;
   params.lcid = m_lcid;
+  params.srcL2Id = m_srcL2Id;
+  params.dstL2Id = m_dstL2Id;
   params.layer = layer;
   params.harqProcessId = harqId;
   params.componentCarrierId = componentCarrierId;
@@ -558,7 +561,7 @@ LteRlcUm::DoReceivePdu (Ptr<Packet> p, uint16_t rnti, uint8_t lcid)
         {
           NS_LOG_LOGIC ("VR(UH) > VR(UR)");
           NS_LOG_LOGIC ("Start reordering timer");
-          m_reorderingTimer = Simulator::Schedule (Time ("0.1s"),
+          m_reorderingTimer = Simulator::Schedule (Time ("0.01s"), //Modified due to retransmission problem for vehicular d2d
                                                    &LteRlcUm::ExpireReorderingTimer ,this);
           m_vrUx = m_vrUh;
           NS_LOG_LOGIC ("New VR(UX) = " << m_vrUx);
@@ -1134,6 +1137,8 @@ LteRlcUm::DoReportBufferStatus (void)
   LteMacSapProvider::ReportBufferStatusParameters r;
   r.rnti = m_rnti;
   r.lcid = m_lcid;
+  r.srcL2Id = m_srcL2Id;
+  r.dstL2Id = m_dstL2Id;
   r.txQueueSize = queueSize;
   r.txQueueHolDelay = holDelay.GetMilliSeconds () ;
   r.retxQueueSize = 0;

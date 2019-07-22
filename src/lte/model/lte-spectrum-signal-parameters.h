@@ -16,7 +16,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
- * Modified by Marco Miozzo <mmiozzo@cttc.es> (add data and ctrl diversity)
+ * Modified by:
+ *          Marco Miozzo <mmiozzo@cttc.es> (add data and ctrl diversity)
+ *          NIST (D2D)
  */
 
 #ifndef LTE_SPECTRUM_SIGNAL_PARAMETERS_H
@@ -151,6 +153,48 @@ struct LteSpectrumSignalParametersUlSrsFrame : public SpectrumSignalParameters
   uint16_t cellId; ///< cell ID
 };
 
+
+/**
+* \ingroup lte
+*
+* Signal parameters for Lte SL Frame (PSCCH and PSSCH)
+*/
+struct LteSpectrumSignalParametersSlFrame : public SpectrumSignalParameters
+{
+  
+  // inherited from SpectrumSignalParameters
+  virtual Ptr<SpectrumSignalParameters> Copy ();
+  
+  /**
+  * default constructor
+  */
+  LteSpectrumSignalParametersSlFrame ();
+  
+  /**
+  * copy constructor
+  */
+  LteSpectrumSignalParametersSlFrame (const LteSpectrumSignalParametersSlFrame& p);
+
+
+  /**
+  * The packet burst being transmitted with this signal
+  */
+  Ptr<PacketBurst> packetBurst;
+
+  /**
+   * The control messages being sent (for sidelink, there should only be 1)
+   */
+  std::list<Ptr<LteControlMessage> > ctrlMsgList;
+  
+  uint32_t nodeId;
+  uint8_t groupId;
+
+  /**
+   * The Sidelink synchronization signal identifier of the transmitting UE
+   */
+  uint64_t slssId;
+  
+};
 
 }  // namespace ns3
 

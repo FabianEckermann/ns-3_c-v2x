@@ -19,6 +19,7 @@
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *          NIST (D2D)
  */
 
 #ifndef RRC_HEADER_H
@@ -197,6 +198,13 @@ protected:
    * \param thresholdEutra LteRrcSap::ThresholdEutra
    */
   void SerializeThresholdEutra (LteRrcSap::ThresholdEutra thresholdEutra) const;
+  /**
+   * Serialize sidelink ue information function
+   *
+   * \param slUeInfo LteRrcSap::SidelinkUeInformation
+   */
+  void SerializeSidelinkUeInformation (LteRrcSap::SidelinkUeInformation slUeInfo) const;
+  
   
   // Deserialization functions
   /**
@@ -359,6 +367,15 @@ protected:
    * \returns buffer iterator
    */
   Buffer::Iterator DeserializePhysicalConfigDedicatedSCell (LteRrcSap::PhysicalConfigDedicatedSCell *pcdsc, Buffer::Iterator bIterator);
+  /**
+   * Deserialize sidelink ue information function
+   *
+   * \param slInfo LteRrcSap::SidelinkUeInformation *
+   * \param bIterator buffer iterator
+   * \returns buffer iterator
+   */
+  Buffer::Iterator DeserializeSidelinkUeInformation (LteRrcSap::SidelinkUeInformation *slInfo, Buffer::Iterator bIterator);
+
 
   /**
    * This function prints the object, for debugging purposes.
@@ -1105,6 +1122,38 @@ public:
 
 private:
   LteRrcSap::MeasurementReport m_measurementReport; ///< measurement report
+
+};
+
+
+/**
+* This class manages the serialization/deserialization of MeasurementReport IE
+*/
+class SidelinkUeInformationHeader : public RrcUlDcchMessage
+{
+public:
+  SidelinkUeInformationHeader ();
+  ~SidelinkUeInformationHeader ();
+
+  // Inherited from RrcAsn1Header 
+  void PreSerialize () const;
+  uint32_t Deserialize (Buffer::Iterator bIterator);
+  void Print (std::ostream &os) const;
+
+  /**
+  * Receives a SidelinkUeInformation IE and stores the contents into the class attributes
+  * @param msg The information element to parse
+  */
+  void SetMessage (LteRrcSap::SidelinkUeInformation msg);
+
+  /**
+  * Returns a SidelinkUeInformation IE from the values in the class attributes
+  * @return A SidelinkUeInformation, as defined in LteRrcSap
+  */
+  LteRrcSap::SidelinkUeInformation GetMessage () const;
+
+private:
+  LteRrcSap::SidelinkUeInformation m_sidelinkUeInformation;
 
 };
 

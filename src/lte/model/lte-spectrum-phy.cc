@@ -18,6 +18,9 @@
  * Author: Nicola Baldo <nbaldo@cttc.es>
  *         Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <marco.miozzo@cttc.es> (add physical error model)
+ * Modified by: NIST (D2D)
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 
@@ -32,12 +35,16 @@
 #include "lte-net-device.h"
 #include "lte-radio-bearer-tag.h"
 #include "lte-chunk-processor.h"
+#include "lte-sl-chunk-processor.h"
 #include "lte-phy-tag.h"
 #include <ns3/lte-mi-error-model.h>
 #include <ns3/lte-radio-bearer-tag.h>
 #include <ns3/boolean.h>
 #include <ns3/double.h>
 #include <ns3/config.h>
+#include <ns3/node.h>
+#include "ns3/enum.h"
+#include <ns3/pointer.h>
 
 namespace ns3 {
 
@@ -124,6 +131,83 @@ operator < (const TbId_t& a, const TbId_t& b)
   return ( (a.m_rnti < b.m_rnti) || ( (a.m_rnti == b.m_rnti) && (a.m_layer < b.m_layer) ) );
 }
 
+SlTbId_t::SlTbId_t ()
+{
+}
+
+SlTbId_t::SlTbId_t (const uint16_t a, const uint8_t b)
+: m_rnti (a),
+  m_l1dst (b)
+{
+}
+
+bool
+operator == (const SlTbId_t &a, const SlTbId_t &b)
+{
+  return ( (a.m_rnti == b.m_rnti) && (a.m_l1dst == b.m_l1dst) );
+}
+
+bool
+operator < (const SlTbId_t& a, const SlTbId_t& b)
+{
+  return ( (a.m_rnti < b.m_rnti) || ( (a.m_rnti == b.m_rnti) && (a.m_l1dst < b.m_l1dst) ) );
+}
+
+SlV2xTbId_t::SlV2xTbId_t ()
+{
+}
+
+SlV2xTbId_t::SlV2xTbId_t (const uint16_t a)
+: m_rnti (a)
+{
+}
+
+bool
+operator == (const SlV2xTbId_t &a, const SlV2xTbId_t &b)
+{
+  return ( (a.m_rnti == b.m_rnti) );
+}
+
+bool
+operator < (const SlV2xTbId_t& a, const SlV2xTbId_t& b)
+{
+  return ( (a.m_rnti < b.m_rnti) );
+}
+
+bool
+operator == (const SlCtrlPacketInfo_t &a, const SlCtrlPacketInfo_t &b)
+{
+  return (a.sinr == b.sinr);
+}
+
+bool
+operator < (const SlCtrlPacketInfo_t& a, const SlCtrlPacketInfo_t& b)
+{
+  return (a.sinr > b.sinr); //we want by decreasing SINR
+}
+
+DiscTbId_t::DiscTbId_t ()
+{
+}
+
+DiscTbId_t::DiscTbId_t (const uint16_t a, const uint8_t b)
+: m_rnti (a),
+  m_resPsdch (b)
+{
+}
+
+bool
+operator == (const DiscTbId_t &a, const DiscTbId_t &b)
+{
+  return ( (a.m_rnti == b.m_rnti) && (a.m_resPsdch == b.m_resPsdch) );
+}
+
+bool
+operator < (const DiscTbId_t& a, const DiscTbId_t& b)
+{
+  return ( (a.m_rnti < b.m_rnti) || ( (a.m_rnti == b.m_rnti) && (a.m_resPsdch < b.m_resPsdch) ) );
+}
+
 NS_OBJECT_ENSURE_REGISTERED (LteSpectrumPhy);
 
 LteSpectrumPhy::LteSpectrumPhy ()
@@ -131,7 +215,9 @@ LteSpectrumPhy::LteSpectrumPhy ()
     m_cellId (0),
     m_componentCarrierId (0),
     m_transmissionMode (0),
-    m_layersNum (1)
+    m_layersNum (1),
+    m_ulDataSlCheck (false),
+    m_slssId(0)
 {
   NS_LOG_FUNCTION (this);
   m_random = CreateObject<UniformRandomVariable> ();
@@ -139,6 +225,7 @@ LteSpectrumPhy::LteSpectrumPhy ()
   m_random->SetAttribute ("Max", DoubleValue (1.0));
   m_interferenceData = CreateObject<LteInterference> ();
   m_interferenceCtrl = CreateObject<LteInterference> ();
+  m_interferenceSl = CreateObject<LteSlInterference> ();
 
   for (uint8_t i = 0; i < 7; i++)
     {
@@ -151,6 +238,8 @@ LteSpectrumPhy::~LteSpectrumPhy ()
 {
   NS_LOG_FUNCTION (this);
   m_expectedTbs.clear ();
+  m_expectedSlTbs.clear ();
+  m_expectedSlV2xTbs.clear(); 
   m_txModeGain.clear ();
 }
 
@@ -164,6 +253,9 @@ void LteSpectrumPhy::DoDispose ()
   m_interferenceData = 0;
   m_interferenceCtrl->Dispose ();
   m_interferenceCtrl = 0;
+  m_interferenceSl->Dispose ();
+  m_interferenceSl = 0;
+  m_ulDataSlCheck = false;
   m_ltePhyRxDataEndErrorCallback = MakeNullCallback< void > ();
   m_ltePhyRxDataEndOkCallback    = MakeNullCallback< void, Ptr<Packet> >  ();
   m_ltePhyRxCtrlEndOkCallback = MakeNullCallback< void, std::list<Ptr<LteControlMessage> > > ();
@@ -171,6 +263,7 @@ void LteSpectrumPhy::DoDispose ()
   m_ltePhyDlHarqFeedbackCallback = MakeNullCallback< void, DlInfoListElement_s > ();
   m_ltePhyUlHarqFeedbackCallback = MakeNullCallback< void, UlInfoListElement_s > ();
   m_ltePhyRxPssCallback = MakeNullCallback< void, uint16_t, Ptr<SpectrumValue> > ();
+  m_ltePhyRxSlssCallback = MakeNullCallback< void, uint16_t, Ptr<SpectrumValue> > ();
   SpectrumPhy::DoDispose ();
 } 
 
@@ -203,6 +296,9 @@ std::ostream& operator<< (std::ostream& os, LteSpectrumPhy::State s)
     case LteSpectrumPhy::TX_UL_SRS:
       os << "TX_UL_SRS";
       break;
+    case LteSpectrumPhy::TX_UL_V2X_SCI:
+      os << "TX_UL_V2X_SCI"; 
+      break;  
     default:
       os << "UNKNOWN";
       break;
@@ -236,6 +332,11 @@ LteSpectrumPhy::GetTypeId (void)
                      "Trace fired when a previously started RX terminates with an error",
                      MakeTraceSourceAccessor (&LteSpectrumPhy::m_phyRxEndErrorTrace),
                      "ns3::Packet::TracedCallback")
+    .AddAttribute ("DropRbOnCollisionEnabled",
+                   "Activate/Deactivate the dropping colliding RBs regardless SINR value [by default is deactive].",
+                    BooleanValue (false),
+                    MakeBooleanAccessor (&LteSpectrumPhy::m_dropRbOnCollisionEnabled),
+                    MakeBooleanChecker ())                 
     .AddAttribute ("DataErrorModelEnabled",
                     "Activate/Deactivate the error model of data (TBs of PDSCH and PUSCH) [by default is active].",
                     BooleanValue (true),
@@ -246,6 +347,21 @@ LteSpectrumPhy::GetTypeId (void)
                     BooleanValue (true),
                     MakeBooleanAccessor (&LteSpectrumPhy::m_ctrlErrorModelEnabled),
                     MakeBooleanChecker ())
+    .AddAttribute ("NistErrorModelEnabled",
+                   "Activate/Deactivate the NIST based error model [by default is active].",
+                   BooleanValue (true),
+                   MakeBooleanAccessor (&LteSpectrumPhy::m_nistErrorModelEnabled),
+                   MakeBooleanChecker ())
+    .AddAttribute ("SlDataBLERModelEnabled",
+                   "Activate/Deactivate the PSSCH BLER model [by default is active].",
+                   BooleanValue (true),
+                   MakeBooleanAccessor (&LteSpectrumPhy::m_slBlerEnabled),
+                   MakeBooleanChecker ())
+    .AddAttribute ("FadingModel",
+                   "Fading model",
+                   EnumValue (LtePhyErrorModel::AWGN),
+                   MakeEnumAccessor (&LteSpectrumPhy::m_fadingModel),
+                   MakeEnumChecker (LtePhyErrorModel::AWGN, "AWGN"))                
     .AddTraceSource ("DlPhyReception",
                      "DL reception PHY layer statistics.",
                      MakeTraceSourceAccessor (&LteSpectrumPhy::m_dlPhyReception),
@@ -254,6 +370,29 @@ LteSpectrumPhy::GetTypeId (void)
                      "DL reception PHY layer statistics.",
                      MakeTraceSourceAccessor (&LteSpectrumPhy::m_ulPhyReception),
                      "ns3::PhyReceptionStatParameters::TracedCallback")
+    .AddTraceSource ("SlPhyReception",
+                     "SL reception PHY layer statistics.",
+                     MakeTraceSourceAccessor (&LteSpectrumPhy::m_slPhyReception),
+                     "ns3::PhyReceptionStatParameters::TracedCallback")
+    .AddTraceSource ("SlPscchReception",
+                     "SL reception PCCH PHY layer statistics.",
+                     MakeTraceSourceAccessor (&LteSpectrumPhy::m_slPscchReception),
+                     "ns3::PhyReceptionStatParameters::TracedCallback")
+    .AddAttribute ("HalfDuplexPhy",
+                   "a pointer to a spectrum phy object",
+                   PointerValue (),
+                   MakePointerAccessor (&LteSpectrumPhy::m_halfDuplexPhy),
+                   MakePointerChecker <LteSpectrumPhy> ())
+    .AddAttribute ("CtrlFullDuplexEnabled",
+                    "Activate/Deactivate the full duplex in the PSCCH [by default is disable].",
+                    BooleanValue (false),
+                    MakeBooleanAccessor (&LteSpectrumPhy::m_ctrlFullDuplexEnabled),
+                    MakeBooleanChecker ())
+    .AddAttribute ("ErrorModelHarqD2dDiscoveryEnabled",
+                   "enable the error model and harq for D2D Discovery",
+                   BooleanValue (true),
+                   MakeBooleanAccessor (&LteSpectrumPhy::m_errorModelHarqD2dDiscoveryEnabled),
+                   MakeBooleanChecker ())
   ;
   return tid;
 }
@@ -329,6 +468,7 @@ LteSpectrumPhy::SetNoisePowerSpectralDensity (Ptr<const SpectrumValue> noisePsd)
   m_rxSpectrumModel = noisePsd->GetSpectrumModel ();
   m_interferenceData->SetNoisePowerSpectralDensity (noisePsd);
   m_interferenceCtrl->SetNoisePowerSpectralDensity (noisePsd);
+  m_interferenceSl->SetNoisePowerSpectralDensity (noisePsd);
 }
 
   
@@ -337,6 +477,7 @@ LteSpectrumPhy::Reset ()
 {
   NS_LOG_FUNCTION (this);
   m_cellId = 0;
+  m_slssId = 0;
   m_state = IDLE;
   m_transmissionMode = 0;
   m_layersNum = 1;
@@ -350,8 +491,27 @@ LteSpectrumPhy::Reset ()
   m_rxPacketBurstList.clear ();
   m_txPacketBurst = 0;
   m_rxSpectrumModel = 0;
+  m_halfDuplexPhy = 0;
+  m_ulDataSlCheck = false;
 }
 
+void 
+LteSpectrumPhy::ClearExpectedSlTb ()
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_DEBUG (this << " Expected TBs: " << m_expectedSlTbs.size ());
+  m_expectedSlTbs.clear ();
+  NS_LOG_DEBUG (this << " After clearing Expected TBs size: " << m_expectedSlTbs.size ());
+}
+
+void 
+LteSpectrumPhy::ClearExpectedSlV2xTb ()
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_DEBUG (this << " Expected TBs: " << m_expectedSlV2xTbs.size ());
+  m_expectedSlV2xTbs.clear(); 
+  NS_LOG_DEBUG (this << " After clearing Expected TBs size: " << m_expectedSlV2xTbs.size());
+}
 
 void
 LteSpectrumPhy::SetLtePhyRxDataEndErrorCallback (LtePhyRxDataEndErrorCallback c)
@@ -446,7 +606,8 @@ bool
 LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration)
 {
   NS_LOG_FUNCTION (this << pb);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
+
   
   m_phyTxStartTrace (pb);
   
@@ -488,6 +649,10 @@ LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
       txParams->packetBurst = pb;
       txParams->ctrlMsgList = ctrlMsgList;
       txParams->cellId = m_cellId;
+      if (pb) 
+      {
+        m_ulDataSlCheck = true;
+      }
       m_channel->StartTx (txParams);
       m_endTxEvent = Simulator::Schedule (duration, &LteSpectrumPhy::EndTxData, this);
     }
@@ -502,10 +667,75 @@ LteSpectrumPhy::StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlM
 }
 
 bool
+LteSpectrumPhy::StartTxSlDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration, uint8_t groupId)
+{
+  NS_LOG_FUNCTION (this << pb);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
+  
+  m_phyTxStartTrace (pb);
+  
+  switch (m_state)
+  {
+    case RX_DATA:
+    case RX_DL_CTRL:
+    case RX_UL_SRS:
+      NS_FATAL_ERROR ("cannot TX while RX: according to FDD channel acces, the physical layer for transmission cannot be used for reception");
+      break;
+
+    case TX_DATA:
+    case TX_DL_CTRL:      
+    case TX_UL_SRS:
+      NS_FATAL_ERROR ("cannot TX while already TX: the MAC should avoid this");
+      break;
+
+    case TX_UL_V2X_SCI:
+    case IDLE:
+    {
+      
+      //m_txPsd must be setted by the device, according to
+      //(i) the available subchannel for transmission
+      //(ii) the power transmission
+      
+      NS_ASSERT (m_txPsd);
+      m_txPacketBurst = pb;
+      
+      // we need to convey some PHY meta information to the receiver
+      // to be used for simulation purposes (e.g., the CellId). This
+      // is done by setting the ctrlMsgList parameter of
+      // LteSpectrumSignalParametersDataFrame
+      ChangeState (TX_DATA);
+      NS_ASSERT (m_channel);
+      Ptr<LteSpectrumSignalParametersSlFrame> txParams = Create<LteSpectrumSignalParametersSlFrame> ();
+      txParams->duration = duration;
+      txParams->txPhy = GetObject<SpectrumPhy> ();
+      txParams->txAntenna = m_antenna;
+      txParams->psd = m_txPsd;
+      txParams->nodeId = GetDevice()->GetNode()->GetId();
+      txParams->groupId = groupId;
+      txParams->slssId = m_slssId;
+      txParams->packetBurst = pb;
+      txParams->ctrlMsgList = ctrlMsgList;
+      m_ulDataSlCheck = true;
+
+      m_channel->StartTx (txParams);
+      m_endTxEvent = Simulator::Schedule (duration, &LteSpectrumPhy::EndTxData, this);
+    
+      return false;
+      break;
+
+    }
+    default:
+      NS_FATAL_ERROR ("unknown state");
+      return true;
+      break;
+  }
+}
+
+bool
 LteSpectrumPhy::StartTxDlCtrlFrame (std::list<Ptr<LteControlMessage> > ctrlMsgList, bool pss)
 {
   NS_LOG_FUNCTION (this << " PSS " << (uint16_t)pss);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
   
   switch (m_state)
   {
@@ -563,7 +793,7 @@ bool
 LteSpectrumPhy::StartTxUlSrsFrame ()
 {
   NS_LOG_FUNCTION (this);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
   
   switch (m_state)
     {
@@ -620,11 +850,12 @@ void
 LteSpectrumPhy::EndTxData ()
 {
   NS_LOG_FUNCTION (this);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
 
-  NS_ASSERT (m_state == TX_DATA);
+  //NS_ASSERT (m_state == TX_DATA);
   m_phyTxEndTrace (m_txPacketBurst);
   m_txPacketBurst = 0;
+  m_ulDataSlCheck = false;
   ChangeState (IDLE);
 }
 
@@ -632,7 +863,7 @@ void
 LteSpectrumPhy::EndTxDlCtrl ()
 {
   NS_LOG_FUNCTION (this);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
 
   NS_ASSERT (m_state == TX_DL_CTRL);
   NS_ASSERT (m_txPacketBurst == 0);
@@ -643,15 +874,12 @@ void
 LteSpectrumPhy::EndTxUlSrs ()
 {
   NS_LOG_FUNCTION (this);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
 
   NS_ASSERT (m_state == TX_UL_SRS);
   NS_ASSERT (m_txPacketBurst == 0);
   ChangeState (IDLE);
 }
-
-
-
 
 void
 LteSpectrumPhy::StartRx (Ptr<SpectrumSignalParameters> spectrumRxParams)
@@ -667,10 +895,25 @@ LteSpectrumPhy::StartRx (Ptr<SpectrumSignalParameters> spectrumRxParams)
   Ptr<LteSpectrumSignalParametersDataFrame> lteDataRxParams = DynamicCast<LteSpectrumSignalParametersDataFrame> (spectrumRxParams);
   Ptr<LteSpectrumSignalParametersDlCtrlFrame> lteDlCtrlRxParams = DynamicCast<LteSpectrumSignalParametersDlCtrlFrame> (spectrumRxParams);
   Ptr<LteSpectrumSignalParametersUlSrsFrame> lteUlSrsRxParams = DynamicCast<LteSpectrumSignalParametersUlSrsFrame> (spectrumRxParams);
+  Ptr<LteSpectrumSignalParametersSlFrame> lteSlRxParams = DynamicCast<LteSpectrumSignalParametersSlFrame> (spectrumRxParams);
   if (lteDataRxParams != 0)
     {
       m_interferenceData->AddSignal (rxPsd, duration);
+      m_interferenceSl->AddSignal (rxPsd, duration); //to compute UL/SL interference
       StartRxData (lteDataRxParams);
+    }
+  else if (lteSlRxParams !=0)
+    {
+      m_interferenceSl->AddSignal (rxPsd, duration); 
+      m_interferenceData->AddSignal (rxPsd, duration); //to compute UL/SL interference
+      if(m_ctrlFullDuplexEnabled && lteSlRxParams->ctrlMsgList.size () > 0) 
+      { 
+        StartRxSlData (lteSlRxParams);
+      }
+      else if (!m_halfDuplexPhy || m_halfDuplexPhy->GetState () == IDLE || !(m_halfDuplexPhy->m_ulDataSlCheck))
+      {
+        StartRxSlData (lteSlRxParams);
+      }
     }
   else if (lteDlCtrlRxParams!=0)
     {
@@ -687,6 +930,7 @@ LteSpectrumPhy::StartRx (Ptr<SpectrumSignalParameters> spectrumRxParams)
       // other type of signal (could be 3G, GSM, whatever) -> interference
       m_interferenceData->AddSignal (rxPsd, duration);
       m_interferenceCtrl->AddSignal (rxPsd, duration);
+      m_interferenceSl->AddSignal (rxPsd, duration); 
     }    
 }
 
@@ -694,6 +938,7 @@ void
 LteSpectrumPhy::StartRxData (Ptr<LteSpectrumSignalParametersDataFrame> params)
 {
   NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
   switch (m_state)
     {
       case TX_DATA:
@@ -766,12 +1011,182 @@ LteSpectrumPhy::StartRxData (Ptr<LteSpectrumSignalParametersDataFrame> params)
    NS_LOG_LOGIC (this << " state: " << m_state);
 }
 
+void
+LteSpectrumPhy::StartRxSlData (Ptr<LteSpectrumSignalParametersSlFrame> params)
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
+
+  switch (m_state)
+  {
+    case TX_DATA:
+      case TX_DL_CTRL:
+      case TX_UL_SRS:
+        NS_FATAL_ERROR ("cannot RX while TX: according to FDD channel access, the physical layer for transmission cannot be used for reception");
+        break;
+      case RX_DL_CTRL:
+        NS_FATAL_ERROR ("cannot RX Data while receiving control");
+        break;
+      case IDLE:
+    case RX_DATA:
+      // the behavior is similar when
+      // we're IDLE or RX because we can receive more signals
+      // simultaneously (e.g., at the eNB).
+      {
+        
+        // check it is not an eNB and not the same sending node (sidelink : discovery & communication )
+        if (m_cellId == 0 && params->nodeId != GetDevice()->GetNode()->GetId())
+          {
+            NS_LOG_LOGIC (this << " the signal is neither from eNodeB nor from this UE ");
+
+            //SLSSs (PSBCH) should be received by all UEs
+            //Checking if it is a SLSS, and if it is: measure S-RSRP and receive MIB-SL
+            if (params->ctrlMsgList.size () >0)
+              {
+                std::list<Ptr<LteControlMessage> >::iterator ctrlIt;
+                for (ctrlIt=params->ctrlMsgList.begin() ; ctrlIt != params->ctrlMsgList.end(); ctrlIt++)
+                  {
+                    //Detection of a SLSS and callback for measurement of S-RSRP
+                    if( (*ctrlIt)->GetMessageType () == LteControlMessage::MIB_SL)
+                      {
+                        NS_LOG_LOGIC (this << " receiving a SLSS");
+                        Ptr<MibSLLteControlMessage> msg = DynamicCast<MibSLLteControlMessage> (*ctrlIt);
+                        LteRrcSap::MasterInformationBlockSL mibSL = msg->GetMibSL ();
+                        //Measure S-RSRP
+                        if (!m_ltePhyRxSlssCallback.IsNull ())
+                          {
+                            m_ltePhyRxSlssCallback (mibSL.slssid, params->psd);
+                          }
+                        //Receive MIB-SL
+                        if (m_rxPacketInfo.empty ())
+                          {
+                            NS_ASSERT (m_state == IDLE);
+                            // first transmission, i.e., we're IDLE and we start RX
+                            m_firstRxStart = Simulator::Now ();
+                            m_firstRxDuration = params->duration;
+                            NS_LOG_LOGIC (this << " scheduling EndRxSl with delay " << params->duration.GetSeconds () << "s");
+                              
+                            m_endRxDataEvent = Simulator::Schedule (params->duration, &LteSpectrumPhy::EndRxSlData, this);
+                          }
+                        else
+                          {
+                            NS_ASSERT (m_state == RX_DATA);
+                            // sanity check: if there are multiple RX events, they
+                            // should occur at the same time and have the same
+                            // duration, otherwise the interference calculation
+                            // won't be correct
+                            NS_ASSERT ((m_firstRxStart == Simulator::Now ())
+                                       && (m_firstRxDuration == params->duration));
+                          }
+                        ChangeState (RX_DATA);
+                        m_interferenceSl->StartRx (params->psd);
+                        SlRxPacketInfo_t packetInfo;
+                        packetInfo.m_rxPacketBurst = params->packetBurst;
+                        packetInfo.m_rxControlMessage = *ctrlIt;
+                        //convert the PSD to RB map so we know which RBs were used to transmit the control message
+                        //will be used later to compute error rate
+                        std::vector <int> rbMap;
+                        int i = 0;
+                        for (Values::const_iterator it=params->psd->ConstValuesBegin (); it != params->psd->ConstValuesEnd () ; it++, i++)
+                          {
+                            if (*it != 0)
+                              {
+                                NS_LOG_INFO (this << " SL MIB-SL arriving on RB " << i);
+                                rbMap.push_back (i);
+                              }
+                          }
+                        packetInfo.rbBitmap = rbMap;
+                        m_rxPacketInfo.push_back (packetInfo);
+                        params->ctrlMsgList.erase(ctrlIt);
+                        break;
+                      }
+                  }
+              }
+
+
+            //Receive PSCCH, PSSCH and PSDCH only if synchronized to the transmitter (having the same SLSSID)
+            //and belonging to the destination group
+            if (params->slssId == m_slssId && (params->groupId == 0 || m_l1GroupIds.find (params->groupId) != m_l1GroupIds.end()))
+              {
+                if (m_rxPacketInfo.empty ())
+                  {
+                    NS_ASSERT (m_state == IDLE);
+                    // first transmission, i.e., we're IDLE and we start RX
+                    m_firstRxStart = Simulator::Now ();
+                    m_firstRxDuration = params->duration;
+                    NS_LOG_LOGIC (this << " scheduling EndRxSl with delay " << params->duration.GetSeconds () << "s");
+                    m_endRxDataEvent = Simulator::Schedule (params->duration, &LteSpectrumPhy::EndRxSlData, this);
+                  }
+                else
+                  {
+                    NS_ASSERT (m_state == RX_DATA);
+                    // sanity check: if there are multiple RX events, they
+                    // should occur at the same time and have the same
+                    // duration, otherwise the interference calculation
+                    // won't be correct
+                    NS_ASSERT ((m_firstRxStart == Simulator::Now ())
+                               && (m_firstRxDuration == params->duration));
+                  }
+                ChangeState (RX_DATA);
+                m_interferenceSl->StartRx (params->psd);
+
+                SlRxPacketInfo_t packetInfo;
+                packetInfo.m_rxPacketBurst = params->packetBurst;
+                if (params->ctrlMsgList.size () >0)
+                  {
+                    NS_ASSERT (params->ctrlMsgList.size () == 1);
+                    packetInfo.m_rxControlMessage = *(params->ctrlMsgList.begin());
+                  }
+                //convert the PSD to RB map so we know which RBs were used to transmit the control message
+                //will be used later to compute error rate
+                std::vector <int> rbMap;
+                int i = 0;
+                for (Values::const_iterator it=params->psd->ConstValuesBegin (); it != params->psd->ConstValuesEnd () ; it++, i++)
+                  {
+                    if (*it != 0)
+                      {
+                        NS_LOG_INFO (this << " SL Message arriving on RB " << i);
+                        rbMap.push_back (i);
+                      }
+                  }
+                packetInfo.rbBitmap = rbMap;
+                m_rxPacketInfo.push_back (packetInfo);
+
+                if (params->packetBurst)
+                  {
+                    m_phyRxStartTrace (params->packetBurst);
+                    NS_LOG_DEBUG (this << " RX Burst containing " << params->packetBurst->GetNPackets() << " packets");
+                  }
+                NS_LOG_DEBUG (this << " insert sidelink ctrl msgs " << params->ctrlMsgList.size ());
+                NS_LOG_LOGIC (this << " numSimultaneousRxEvents = " << m_rxPacketInfo.size ());
+              }
+
+            else
+              {
+                NS_LOG_LOGIC (this << " not in sync with this sidelink signal... Ignoring ");
+              }
+          }
+        else
+        {
+        	NS_LOG_LOGIC (this << " the signal is from eNodeB or from this UE... Ignoring");
+        }
+      }
+      break;
+
+    default:
+      NS_FATAL_ERROR ("unknown state");
+      break;
+  }
+
+  NS_LOG_LOGIC (this << " state: " << m_state);
+}
 
 
 void
 LteSpectrumPhy::StartRxDlCtrl (Ptr<LteSpectrumSignalParametersDlCtrlFrame> lteDlCtrlRxParams)
 {
   NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
 
   // To check if we're synchronized to this signal, we check
   // for the CellId which is reported in the
@@ -856,6 +1271,7 @@ void
 LteSpectrumPhy::StartRxUlSrs (Ptr<LteSpectrumSignalParametersUlSrsFrame> lteUlSrsRxParams)
 {
   NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
   switch (m_state)
     {
     case TX_DATA:
@@ -930,6 +1346,40 @@ LteSpectrumPhy::UpdateSinrPerceived (const SpectrumValue& sinr)
   m_sinrPerceived = sinr;
 }
 
+void
+LteSpectrumPhy::UpdateSlSinrPerceived (std::vector <SpectrumValue> sinr)
+{
+  NS_LOG_FUNCTION (this);
+  m_slSinrPerceived = sinr;
+}
+
+void
+LteSpectrumPhy::UpdateSlSigPerceived (std::vector <SpectrumValue> signal)
+{
+  NS_LOG_FUNCTION (this);
+  m_slSignalPerceived = signal;
+}
+
+void
+LteSpectrumPhy::UpdateSlIntPerceived (std::vector <SpectrumValue> interference)
+{
+  NS_LOG_FUNCTION (this);
+  m_slInterferencePerceived = interference;
+}
+
+std::vector <SpectrumValue> 
+LteSpectrumPhy::GetSlSignalPerceived ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_slSignalPerceived; 
+}
+
+std::vector <SpectrumValue>
+LteSpectrumPhy::GetSlInterferencePerceived ()
+{
+  NS_LOG_FUNCTION (this); 
+  return m_slInterferencePerceived; 
+}
 
 void
 LteSpectrumPhy::AddExpectedTb (uint16_t  rnti, uint8_t ndi, uint16_t size, uint8_t mcs, std::vector<int> map, uint8_t layer, uint8_t harqId,uint8_t rv,  bool downlink)
@@ -950,19 +1400,90 @@ LteSpectrumPhy::AddExpectedTb (uint16_t  rnti, uint8_t ndi, uint16_t size, uint8
   m_expectedTbs.insert (std::pair<TbId_t, tbInfo_t> (tbId,tbInfo));
 }
 
+void
+LteSpectrumPhy::AddExpectedTb (uint16_t  rnti, uint8_t l1dst, uint8_t ndi, uint16_t size, uint8_t mcs, std::vector<int> map, uint8_t rv)
+{
+  NS_LOG_FUNCTION (this << " rnti: " << rnti << " group " << (uint16_t) l1dst << " NDI " << (uint16_t)ndi << " size " << size << " mcs " << (uint16_t)mcs << " rv " << (uint16_t)rv);
+  SlTbId_t tbId;
+  tbId.m_rnti = rnti;
+  tbId.m_l1dst = l1dst;
+  expectedSlTbs_t::iterator it;
+  it = m_expectedSlTbs.find (tbId);
+  if (it != m_expectedSlTbs.end ())
+    {
+      // migth be a TB of an unreceived packet (due to high progpalosses)
+      m_expectedSlTbs.erase (it);
+    }
+  // insert new entry
+  SltbInfo_t tbInfo = {ndi, size, mcs, map, rv, 0.0, false, false};
+  m_expectedSlTbs.insert (std::pair<SlTbId_t, SltbInfo_t> (tbId,tbInfo));
+
+  // if it is for new data, reset the HARQ process
+  if (ndi)
+    {
+      m_harqPhyModule->ResetSlHarqProcessStatus (rnti, l1dst);
+    }
+}
+
+
+void
+LteSpectrumPhy::AddExpectedTbV2x (uint16_t  rnti, uint16_t size, uint8_t mcs, std::vector<int> map)
+{
+  NS_LOG_FUNCTION (this << " rnti: " << rnti  << " size " << size << " mcs " << (uint16_t)mcs);
+  SlV2xTbId_t tbId;
+  tbId.m_rnti = rnti;
+  expectedSlV2xTbs_t::iterator it;
+  it = m_expectedSlV2xTbs.find (tbId);
+  if (it != m_expectedSlV2xTbs.end ())
+    {
+      // migth be a TB of an unreceived packet (due to high progpalosses)
+      m_expectedSlV2xTbs.erase (it);
+    }
+  // insert new entry
+  SlV2xTbInfo_t tbInfo = {size, mcs, map, 0.0, false, false};
+  m_expectedSlV2xTbs.insert (std::pair<SlV2xTbId_t, SlV2xTbInfo_t> (tbId,tbInfo));
+}
+
+
+void
+LteSpectrumPhy::AddExpectedTb (uint16_t  rnti, uint8_t resPsdch, uint8_t ndi, std::vector<int> map, uint8_t rv)
+{
+  NS_LOG_FUNCTION (this << " rnti: " << rnti << " resPsdch " << resPsdch << " NDI " << (uint16_t)ndi << " rv " << (uint16_t)rv);
+  DiscTbId_t tbId;
+  tbId.m_rnti = rnti;
+  tbId.m_resPsdch = resPsdch;
+  expectedDiscTbs_t::iterator it;
+  it = m_expectedDiscTbs.find (tbId);
+  if (it != m_expectedDiscTbs.end ())
+    {
+      // migth be a TB of an unreceived packet (due to high progpalosses)
+      m_expectedDiscTbs.erase (it);
+    }
+  // insert new entry
+  DisctbInfo_t tbInfo = {ndi, resPsdch, map, rv, 0.0, false, false};
+
+  m_expectedDiscTbs.insert (std::pair<DiscTbId_t, DisctbInfo_t> (tbId,tbInfo));
+
+  // if it is for new data, reset the HARQ process
+  if (ndi)
+    {
+      m_harqPhyModule->ResetDiscHarqProcessStatus (rnti, resPsdch);
+    }
+}
+
 
 void
 LteSpectrumPhy::EndRxData ()
 {
   NS_LOG_FUNCTION (this);
-  NS_LOG_LOGIC (this << " state: " << m_state);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
 
   NS_ASSERT (m_state == RX_DATA);
 
   // this will trigger CQI calculation and Error Model evaluation
   // as a side effect, the error model should update the error status of all TBs
   m_interferenceData->EndRx ();
-  NS_LOG_DEBUG (this << " No. of burts " << m_rxPacketBurstList.size ());
+  NS_LOG_DEBUG (this << " No. of burst " << m_rxPacketBurstList.size ());
   NS_LOG_DEBUG (this << " Expected TBs " << m_expectedTbs.size ());
   expectedTbs_t::iterator itTb = m_expectedTbs.begin ();
   
@@ -1008,6 +1529,24 @@ LteSpectrumPhy::EndRxData ()
           params.m_ndi = (*itTb).second.ndi;
           params.m_correctness = (uint8_t)!(*itTb).second.corrupt;
           params.m_ccId = m_componentCarrierId;
+
+          //Aziza
+          //SpectrumValue& m_sinrPerceived : the perceived sinrs in the whole bandwidth
+          //std::vector<int>& (*itTb).second.rbBitmap : the actives RBs for the TB
+
+          SpectrumValue sinrCopy = m_sinrPerceived;
+          std::vector<int> map = (*itTb).second.rbBitmap;
+          double sum = 0.0;
+          for (uint32_t i = 0; i < map.size (); ++i)
+          {
+            double sinrLin = sinrCopy[map.at (i)];
+            sum = sum + sinrLin;
+            //std::cout << "RB " << map.at (i) << "\tSINR " << 10 * std::log10 (sinrLin) << " dB" << std::endl;
+          }
+          params.m_sinrPerRb = sum / map.size ();
+          //std::cout << "average sinr " << 10 * std::log10 (params.m_sinrPerRb) << " dB" <<  std::endl;
+          //
+
           if ((*itTb).second.downlink)
             {
               // DL
@@ -1149,6 +1688,982 @@ LteSpectrumPhy::EndRxData ()
   m_expectedTbs.clear ();
 }
 
+void
+LteSpectrumPhy::EndRxSlData ()
+{
+  NS_LOG_FUNCTION (this);
+  NS_LOG_LOGIC (this << " ID:" << GetDevice()->GetNode()->GetId() << " state: " << m_state);
+  NS_ASSERT (m_state == RX_DATA);
+
+  // this will trigger CQI calculation and Error Model evaluation
+  // as a side effect, the error model should update the error status of all TBs
+  m_interferenceSl->EndRx ();
+  NS_LOG_DEBUG (this << " No. of SL burst " << m_rxPacketInfo.size ());
+  NS_LOG_DEBUG (this << " Expected TBs (D2D communication) " << m_expectedSlTbs.size ());
+  NS_LOG_DEBUG (this << " Expected TBs (V2X communication) " << m_expectedSlV2xTbs.size()); 
+  NS_LOG_DEBUG (this << " Expected TBs (discovery) " << m_expectedDiscTbs.size ());
+  NS_LOG_DEBUG (this << " No. of Ctrl messages " << m_rxControlMessageList.size());
+
+  // apply transmission mode gain
+  // TODO: Check what is the mode for D2D (SIMO?)
+  //       should it be done to each SINR reported?  
+  //NS_LOG_DEBUG (this << " txMode " << (uint16_t)m_transmissionMode << " gain " << m_txModeGain.at (m_transmissionMode));
+  NS_ASSERT (m_transmissionMode < m_txModeGain.size ());  
+  //m_sinrPerceived *= m_txModeGain.at (m_transmissionMode);
+  
+  //Compute error on PSSCH
+  //Create a mapping between the packet tag and the index of the packet bursts. We need this information to access the right SINR measurement.
+  std::map <SlTbId_t, uint32_t> expectedTbToSinrIndex;
+  std::map <SlV2xTbId_t, uint32_t> expectedTbToSinrIndexV2x;
+  for (uint32_t i = 0 ; i < m_rxPacketInfo.size() ; i++)
+    {
+      //even though there may be multiple packets, they all have
+      //the same tag
+      if (m_rxPacketInfo[i].m_rxPacketBurst) //if data packet
+        {
+          std::list<Ptr<Packet> >::const_iterator j = m_rxPacketInfo[i].m_rxPacketBurst->Begin (); 
+          // retrieve TB info of this packet 
+          LteRadioBearerTag tag;
+          (*j)->PeekPacketTag (tag);
+          /*if (m_expectedSlV2xTbs.size() > 0)
+            {
+              SlV2xTbId_t tbId;
+              tbId.m_rnti = tag.GetRnti ();
+              expectedTbToSinrIndexV2x.insert (std::pair<SlV2xTbId_t, uint32_t> (tbId, i));
+            }
+          else*/
+          if (m_expectedSlTbs.size() >0)
+            {
+              SlTbId_t tbId;
+              tbId.m_rnti = tag.GetRnti ();
+              tbId.m_l1dst = tag.GetDestinationL2Id () & 0xFF;
+              expectedTbToSinrIndex.insert (std::pair<SlTbId_t, uint32_t> (tbId, i));
+            }
+        }
+    }
+
+  // V2x communication
+  for (uint32_t i = 0; i < m_rxPacketInfo.size(); i++)
+    {
+      if (m_rxPacketInfo[i].m_rxControlMessage)
+      {
+        if (m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () == LteControlMessage::SCI_V2X)
+        {
+          Ptr<LteControlMessage> rxCtrlMsg = m_rxPacketInfo[i].m_rxControlMessage;
+          Ptr<SciLteControlMessageV2x> msg = DynamicCast<SciLteControlMessageV2x> (rxCtrlMsg);
+          SciListElementV2x sci = msg->GetSci (); 
+
+          SlV2xTbId_t tbId; 
+          tbId.m_rnti = sci.m_rnti; 
+          expectedTbToSinrIndexV2x.insert (std::pair<SlV2xTbId_t, uint32_t> (tbId,i)); 
+
+          std::list<Ptr<SidelinkCommResourcePoolV2x > >::iterator sciIt;
+          for (sciIt = m_slV2xRxPools.begin(); sciIt != m_slV2xRxPools.end(); sciIt++)
+          {
+            std::list<SidelinkCommResourcePoolV2x::SidelinkTransmissionInfo> m_psschTx = (*sciIt)->GetPsschTransmissions(sci.m_riv,sci.m_resPscch);
+            std::list<SidelinkCommResourcePoolV2x::SidelinkTransmissionInfo>::iterator rxIt = m_psschTx.begin(); 
+            if(rxIt != m_psschTx.end())
+            {
+              //reception
+              std::list<SidelinkCommResourcePoolV2x::SidelinkTransmissionInfo>::iterator txIt = m_psschTx.begin(); 
+              std::vector<int> rbMap; 
+              for (int i = txIt->rbStart; i< txIt->rbStart+txIt->rbLen; i++)
+              {
+                rbMap.push_back(i); 
+              }
+              AddExpectedTbV2x (sci.m_rnti, sci.m_tbSize, sci.m_mcs, rbMap);
+            }
+          }
+        }
+      }
+    }
+
+  std::set<int> rbDecodedBitmap;
+  if (m_dropRbOnCollisionEnabled)
+    {
+      NS_LOG_DEBUG (this << " PSSCH DropOnCollisionEnabled: Identifying RB Collisions");
+      //Add new loop to make one pass and identify which RB have collisions
+      
+      std::set<int> rbDecodedBitmapTemp;
+      for (expectedSlTbs_t::iterator itTb = m_expectedSlTbs.begin (); itTb != m_expectedSlTbs.end (); itTb++ )
+        {
+          for (std::vector<int>::iterator rbIt =  (*itTb).second.rbBitmap.begin (); rbIt != (*itTb).second.rbBitmap.end(); rbIt++)
+            {
+              if (rbDecodedBitmapTemp.find (*rbIt) != rbDecodedBitmapTemp.end()) 
+                {
+		              //collision, update the bitmap
+                  rbDecodedBitmap.insert (*rbIt);  
+                }
+              else
+                {
+                  //store resources used by the packet to detect collision
+                  rbDecodedBitmapTemp.insert (*rbIt);  
+                }
+            }
+        }
+      for (expectedSlV2xTbs_t::iterator itTb = m_expectedSlV2xTbs.begin(); itTb != m_expectedSlV2xTbs.end(); itTb++)
+        {
+          for (std::vector<int>::iterator rbIt =  (*itTb).second.rbBitmap.begin (); rbIt != (*itTb).second.rbBitmap.end(); rbIt++)
+            {
+              if (rbDecodedBitmapTemp.find (*rbIt) != rbDecodedBitmapTemp.end()) 
+                {
+		              //collision, update the bitmap
+                  rbDecodedBitmap.insert (*rbIt);  
+                }
+              else
+                {
+                  //store resources used by the packet to detect collision
+                  rbDecodedBitmapTemp.insert (*rbIt);  
+                }
+            }
+        }
+
+    }
+
+  //Compute error for each expected Tb
+  expectedSlTbs_t::iterator itTb = m_expectedSlTbs.begin ();
+  std::map <SlTbId_t, uint32_t>::iterator itSinr;
+  while (itTb!=m_expectedSlTbs.end ())
+    { 
+      itSinr = expectedTbToSinrIndex.find ((*itTb).first);
+      if ((m_dataErrorModelEnabled)&&(m_rxPacketInfo.size ()>0)&&(itSinr != expectedTbToSinrIndex.end())) // avoid to check for errors when there is no actual data transmitted
+        {
+          // retrieve HARQ info
+          HarqProcessInfoList_t harqInfoList;
+          if ((*itTb).second.ndi == 0)
+            {
+              harqInfoList = m_harqPhyModule->GetHarqProcessInfoSl ((*itTb).first.m_rnti, (*itTb).first.m_l1dst);
+              NS_LOG_DEBUG (this << " Nb Retx=" << harqInfoList.size());
+              //std::cout << this << " Nb Retx=" << harqInfoList.size() << std::endl;
+            }
+          
+          NS_LOG_DEBUG(this << "\t" << Simulator::Now ().GetMilliSeconds () << "\tFrom: " << (*itTb).first.m_rnti << "\tCorrupt: " << (*itTb).second.corrupt);
+
+          bool rbDecoded = false;
+          if (m_dropRbOnCollisionEnabled)
+            {
+              NS_LOG_DEBUG (this << " PSSCH DropOnCollisionEnabled: Labeling Corrupted TB");
+              //Check if any of the RBs have been decoded
+              for (std::vector<int>::iterator rbIt =  (*itTb).second.rbBitmap.begin (); rbIt != (*itTb).second.rbBitmap.end(); rbIt++)
+                 {
+                   if (rbDecodedBitmap.find (*rbIt) != rbDecodedBitmap.end ())
+                     {
+                        NS_LOG_DEBUG( this << "\t" << *rbIt << " decoded, labeled as corrupted!");
+                        rbDecoded = true;
+                        (*itTb).second.corrupt = true;
+                        break;
+                     }
+                  }
+            }
+
+          if (!m_nistErrorModelEnabled)
+            {
+              TbStats_t tbStats = LteMiErrorModel::GetTbDecodificationStats (m_slSinrPerceived[(*itSinr).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTb).second.rbBitmap, (*itTb).second.size, (*itTb).second.mcs, harqInfoList);
+              (*itTb).second.mi = tbStats.mi;
+                if(m_slBlerEnabled)
+                  {
+                    if(!rbDecoded)
+                      {
+                        (*itTb).second.corrupt = m_random->GetValue () > tbStats.tbler ? false : true;
+                      }
+                  }
+              NS_LOG_DEBUG (this << " from RNTI " << (*itTb).first.m_rnti << " size " << (*itTb).second.size << " mcs " << (uint32_t)(*itTb).second.mcs << " bitmap " << (*itTb).second.rbBitmap.size () << " TBLER " << tbStats.tbler << " corrupted " << (*itTb).second.corrupt);
+              //std::cout << this << " from RNTI " << (*itTb).first.m_rnti << " size " << (*itTb).second.size << " mcs " << (uint32_t)(*itTb).second.mcs << " bitmap " << (*itTb).second.rbBitmap.size () << " TBLER " << tbStats.tbler << " corrupted " << (*itTb).second.corrupt << " mean SINR " << GetMeanSinr (m_slSinrPerceived[(*itSinr).second]*4, (*itTb).second.rbBitmap) << std::endl;
+            } 
+          else 
+            {
+              TbErrorStats_t tbStats = LtePhyErrorModel::GetPsschBler (m_fadingModel,LtePhyErrorModel::SISO, (*itTb).second.mcs, GetMeanSinr (m_slSinrPerceived[(*itSinr).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTb).second.rbBitmap),  harqInfoList);
+              (*itTb).second.sinr = tbStats.sinr;
+              if(m_slBlerEnabled)
+                {
+                  if (!rbDecoded)
+                    {
+                      (*itTb).second.corrupt = m_random->GetValue () > tbStats.tbler ? false : true;
+                    }
+                }
+              NS_LOG_DEBUG (this << " from RNTI " << (*itTb).first.m_rnti << " size " << (*itTb).second.size << " mcs " << (uint32_t)(*itTb).second.mcs << " bitmap " << (*itTb).second.rbBitmap.size () << " TBLER " << tbStats.tbler << " corrupted " << (*itTb).second.corrupt);
+              //std::cout << this << " from RNTI " << (*itTb).first.m_rnti << " size " << (*itTb).second.size << " mcs " << (uint32_t)(*itTb).second.mcs << " bitmap " << (*itTb).second.rbBitmap.size () << " TBLER " << tbStats.tbler << " corrupted " << (*itTb).second.corrupt << " mean SINR " << GetMeanSinr (m_slSinrPerceived[(*itSinr).second]*4, (*itTb).second.rbBitmap) << std::endl;
+
+            }
+          // std::cout << "Expected transmission on RBs= ";
+          // for (uint32_t i = 0; i < (*itTb).second.rbBitmap.size (); i++)
+          //   {
+          //     std::cout << (*itTb).second.rbBitmap.at(i) << ",";
+          //   }
+          // std::cout << std::endl;
+          // fire traces on SL reception PHY stats
+          PhyReceptionStatParameters params;
+          params.m_timestamp = Simulator::Now ().GetMilliSeconds ();
+          params.m_cellId = m_cellId;
+          params.m_imsi = 0; // it will be set by DlPhyTransmissionCallback in LteHelper
+          params.m_rnti = (*itTb).first.m_rnti;
+          params.m_txMode = m_transmissionMode;
+          params.m_layer =  0;
+          params.m_mcs = (*itTb).second.mcs;
+          params.m_size = (*itTb).second.size;
+          params.m_rv = (*itTb).second.rv;
+          params.m_ndi = (*itTb).second.ndi;
+          params.m_correctness = (uint8_t)!(*itTb).second.corrupt;
+          params.m_sinrPerRb = GetMeanSinr (m_slSinrPerceived[(*itSinr).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTb).second.rbBitmap);
+
+          params.m_rv = harqInfoList.size ();
+          m_slPhyReception (params);          
+        }
+      
+      itTb++;
+    }
+
+  //Compute error for each expected Tb
+  expectedSlV2xTbs_t::iterator itTbV2x = m_expectedSlV2xTbs.begin ();
+  std::map <SlV2xTbId_t, uint32_t>::iterator itSinrV2x;
+  while (itTbV2x != m_expectedSlV2xTbs.end ())
+    {
+      NS_LOG_LOGIC (this << " V2X: compute error for each expected Tb");
+     
+      itSinrV2x = expectedTbToSinrIndexV2x.find ((*itTbV2x).first);
+      if ((m_dataErrorModelEnabled)&&(m_rxPacketInfo.size ()>0)&&(itSinrV2x != expectedTbToSinrIndexV2x.end())) // avoid to check for errors when there is no actual data transmitted
+        {
+          // retrieve HARQ info 
+          HarqProcessInfoList_t harqInfoList;
+
+          NS_LOG_DEBUG(this << "\t" << Simulator::Now ().GetMilliSeconds () << "\tFrom: " << (*itTbV2x).first.m_rnti << "\tCorrupt: " << (*itTbV2x).second.corrupt);
+
+          bool rbDecoded = false;
+          if (m_dropRbOnCollisionEnabled)
+          {
+            NS_LOG_DEBUG (this << " PSSCH DropOnCollisionEnabled: Labeling Corrupted TB");
+            //Check if any of the RBs have been decoded
+            for (std::vector<int>::iterator rbIt =  (*itTbV2x).second.rbBitmap.begin (); rbIt != (*itTbV2x).second.rbBitmap.end(); rbIt++)
+                {
+                  if (rbDecodedBitmap.find (*rbIt) != rbDecodedBitmap.end ())
+                    {
+                      NS_LOG_DEBUG( this << "\t" << *rbIt << " decoded, labeled as corrupted!");
+                      rbDecoded = true;
+                      (*itTbV2x).second.corrupt = true;
+                      break;
+                    }
+                }
+          }
+
+          if (!m_nistErrorModelEnabled)
+          {
+            NS_LOG_LOGIC (this << " nist error model not enabled");
+            TbStats_t tbStats = LteMiErrorModel::GetTbDecodificationStats (m_slSinrPerceived[(*itSinrV2x).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTbV2x).second.rbBitmap, (*itTbV2x).second.size, (*itTbV2x).second.mcs, harqInfoList);
+            (*itTbV2x).second.mi = tbStats.mi;
+              if(m_slBlerEnabled)
+                {
+                  if(!rbDecoded)
+                    {
+                      (*itTbV2x).second.corrupt = m_random->GetValue () > tbStats.tbler ? false : true;
+                    }
+                }
+            NS_LOG_DEBUG (this << " from RNTI " << (*itTbV2x).first.m_rnti << " size " << (*itTbV2x).second.size << " mcs " << (uint32_t)(*itTbV2x).second.mcs << " bitmap " << (*itTbV2x).second.rbBitmap.size () << " TBLER " << tbStats.tbler << " corrupted " << (*itTbV2x).second.corrupt);
+          } 
+          else 
+          {
+            NS_LOG_LOGIC (this << " nist error model enabled");
+            TbErrorStats_t tbStats = LtePhyErrorModel::GetPsschBler (m_fadingModel,LtePhyErrorModel::SISO, (*itTbV2x).second.mcs, GetMeanSinr (m_slSinrPerceived[(*itSinrV2x).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTbV2x).second.rbBitmap),  harqInfoList);
+            (*itTbV2x).second.sinr = tbStats.sinr;
+            if(m_slBlerEnabled)
+              {
+                if (!rbDecoded)
+                  {
+                    (*itTbV2x).second.corrupt = m_random->GetValue () > tbStats.tbler ? false : true;
+                  }
+              }
+            /*std::cout  << " from RNTI " << (*itTbV2x).first.m_rnti 
+                                << " size " << (*itTbV2x).second.size 
+                                << " mcs " << (uint32_t)(*itTbV2x).second.mcs 
+                                << " bitmap " << (*itTbV2x).second.rbBitmap.size () 
+                                << " TBLER " << tbStats.tbler 
+                                << " SINR " << tbStats.sinr 
+                                << " corrupted " << (*itTbV2x).second.corrupt << std::endl;*/
+            NS_LOG_DEBUG (this  << " from RNTI " << (*itTbV2x).first.m_rnti 
+                                << " size " << (*itTbV2x).second.size 
+                                << " mcs " << (uint32_t)(*itTbV2x).second.mcs 
+                                << " bitmap " << (*itTbV2x).second.rbBitmap.size () 
+                                << " TBLER " << tbStats.tbler 
+                                << " corrupted " << (*itTbV2x).second.corrupt);
+          }
+
+        // fire traces on SL reception PHY stats
+        PhyReceptionStatParameters params;
+        params.m_timestamp = Simulator::Now ().GetMilliSeconds ();
+        params.m_cellId = m_cellId;
+        params.m_imsi = 0; // it will be set by DlPhyTransmissionCallback in LteHelper
+        params.m_rnti = (*itTbV2x).first.m_rnti;
+        params.m_txMode = m_transmissionMode;
+        params.m_layer =  0;
+        params.m_mcs = (*itTbV2x).second.mcs;
+        params.m_size = (*itTbV2x).second.size;
+        params.m_correctness = (uint8_t)!(*itTbV2x).second.corrupt;
+        params.m_sinrPerRb = GetMeanSinr (m_slSinrPerceived[(*itSinrV2x).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTbV2x).second.rbBitmap);
+        m_slPhyReception (params);          
+      }
+      itTbV2x++;
+    }
+
+  for (uint32_t i = 0 ; i < m_rxPacketInfo.size() ; i++)
+    {
+      //even though there may be multiple packets, they all have
+      //the same tag
+      if (m_rxPacketInfo[i].m_rxPacketBurst) //if data packet
+        {
+          for (std::list<Ptr<Packet> >::const_iterator j = m_rxPacketInfo[i].m_rxPacketBurst->Begin (); j != m_rxPacketInfo[i].m_rxPacketBurst->End (); ++j)
+            {
+              // retrieve TB info of this packet 
+              LteRadioBearerTag tag;
+              (*j)->PeekPacketTag (tag);
+              if (m_expectedSlV2xTbs.size() > 0)
+                {
+                  SlV2xTbId_t tbId;
+                  tbId.m_rnti = tag.GetRnti ();
+                  NS_LOG_INFO (this << " Packet of " << tbId.m_rnti);
+
+                  itTbV2x = m_expectedSlV2xTbs.find (tbId);
+                  if (itTbV2x!=m_expectedSlV2xTbs.end ())
+                    {
+                      if (!(*itTbV2x).second.corrupt)
+                        {
+                          NS_LOG_LOGIC (this << " packet OK");
+                          m_phyRxEndOkTrace (*j);
+                    
+                          if (!m_ltePhyRxDataEndOkCallback.IsNull ())
+                            {
+                              m_ltePhyRxDataEndOkCallback (*j);
+                            }
+                        }
+                      else
+                        {
+                          // TB received with errors
+                          NS_LOG_LOGIC (this << " TB received with errors");
+                          m_phyRxEndErrorTrace (*j);
+                        }
+                    }
+                  NS_ASSERT (itTb!=m_expectedSlTbs.end () || itTbV2x!=m_expectedSlV2xTbs.end ());
+                }
+              else
+                {
+                  SlTbId_t tbId;
+                  tbId.m_rnti = tag.GetRnti ();
+                  tbId.m_l1dst = tag.GetDestinationL2Id () & 0xFF;
+                  NS_LOG_INFO (this << " Packet of " << tbId.m_rnti << " group " <<  (uint16_t) tbId.m_l1dst);
+                  
+                  itTb = m_expectedSlTbs.find (tbId);
+                  if (itTb!=m_expectedSlTbs.end ())
+                    {
+                      if (!(*itTb).second.corrupt)
+                        {
+                          NS_LOG_LOGIC (this << " packet OK");
+                          m_phyRxEndOkTrace (*j);
+                    
+                          if (!m_ltePhyRxDataEndOkCallback.IsNull ())
+                            {
+                              m_ltePhyRxDataEndOkCallback (*j);
+                            }
+                        }
+                      else
+                        {
+                          // TB received with errors
+                          NS_LOG_LOGIC (this << " TB received with errors");
+                          m_phyRxEndErrorTrace (*j);
+                        }
+
+                      //store HARQ information
+                      if (!(*itTb).second.harqFeedbackSent)
+                        {
+                          (*itTb).second.harqFeedbackSent = true;
+                          //because we do not have feedbacks we do not reset HARQ now.
+                          //we will do it when we expect a new data
+                          if ((*itTb).second.corrupt)
+                            {
+                              if (!m_nistErrorModelEnabled)
+                                {
+                                  m_harqPhyModule->UpdateSlHarqProcessStatus (tbId.m_rnti, tbId.m_l1dst, (*itTb).second.mi, (*itTb).second.size, (*itTb).second.size / EffectiveCodingRate [(*itTb).second.mcs]);
+                                }
+                              else
+                                {
+                                  m_harqPhyModule->UpdateSlHarqProcessStatus (tbId.m_rnti, tbId.m_l1dst, (*itTb).second.sinr);
+                                }
+                            }
+                          else
+                            {
+                              //m_harqPhyModule->ResetSlHarqProcessStatus (tbId.m_rnti, tbId.m_l1dst);
+                            }
+                          /*
+                            if (!m_ltePhySlHarqFeedbackCallback.IsNull ())
+                            {
+                            m_ltePhySlHarqFeedbackCallback (harqSlInfo);
+                            }
+                          */
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+  /* Currently the MIB-SL is treated as a control message. Thus, the following logic applies also to the MIB-SL
+   * The differences: calculation of BLER */
+  // When control messages collide in the PSCCH, the receiver cannot know how many transmissions occured
+  // we sort the messages by SINR and try to decode the ones with highest average SINR per RB first
+  // only one message per RB can be decoded
+  std::list<Ptr<LteControlMessage> > rxControlMessageOkList;
+  bool error = true; 
+  bool ctrlMessageFound = false;
+  std::multiset<SlCtrlPacketInfo_t> sortedControlMessages;
+  rbDecodedBitmap.clear ();
+
+  for (uint32_t i = 0 ; i < m_rxPacketInfo.size() ; i++)
+    {
+      if (m_rxPacketInfo[i].m_rxControlMessage && m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () != LteControlMessage::SL_DISC_MSG) //if control packet               
+        {
+          double meanSinr = GetMeanSinr (m_slSinrPerceived[i], m_rxPacketInfo[i].rbBitmap);
+          SlCtrlPacketInfo_t pInfo;
+          pInfo.sinr = meanSinr;          
+          pInfo.index = i;
+          sortedControlMessages.insert (pInfo);
+          //ctrl_msg_count++;
+        }
+    }
+  
+  if (m_dropRbOnCollisionEnabled)
+    {
+      NS_LOG_DEBUG (this << "Ctrl DropOnCollisionEnabled");
+      //Add new loop to make one pass and identify which RB have collisions
+      std::set<int> rbDecodedBitmapTemp;
+      //DEBUG:
+      //std::cout<<Simulator::Now ().GetMilliSeconds () << " DEBUG sortedControlMessages RB:";
+
+      for (std::multiset<SlCtrlPacketInfo_t>::iterator it =sortedControlMessages.begin(); it != sortedControlMessages.end(); it++ )
+        {
+          int i = (*it).index;
+          
+          //DEBUG:
+          //for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin (); rbIt != m_rxPacketInfo[i].rbBitmap.end(); rbIt++)
+          //  {
+          //    std::cout<< " " << *rbIt;
+          //  }
+          ///////
+
+          for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin (); rbIt != m_rxPacketInfo[i].rbBitmap.end(); rbIt++)
+            {
+              if (rbDecodedBitmapTemp.find (*rbIt) != rbDecodedBitmapTemp.end()) 
+                {
+		          //collision, update the bitmap
+                  rbDecodedBitmap.insert ( m_rxPacketInfo[i].rbBitmap.begin(), m_rxPacketInfo[i].rbBitmap.end());  
+                  break;
+                }
+              else
+                {
+                  //store resources used by the packet to detect collision
+                  rbDecodedBitmapTemp.insert ( m_rxPacketInfo[i].rbBitmap.begin(), m_rxPacketInfo[i].rbBitmap.end());  
+                }
+            }
+        }
+      
+      /////// DEBUG: /////////
+      //std::cout<<std::endl;
+      //std::cout<< this << " DEBUG rbDecodedBitmapTemp:";
+      //for(std::set<int>::iterator it = rbDecodedBitmapTemp.begin(); it!= rbDecodedBitmapTemp.end(); it++)
+      //  {
+      //    std::cout<< " " << *it;
+      //  }
+      //  std::cout<<std::endl;
+      ///////////////////////
+    }
+  /////// DEBUG: /////////
+  //std::cout<< this << " DEBUG rbDecodedBitmap:";
+  //for(std::set<int>::iterator it = rbDecodedBitmap.begin(); it!= rbDecodedBitmap.end(); it++)
+  //  {
+  //    std::cout<< " " << *it;
+  //  }
+  //  std::cout<<std::endl;
+  ///////////////////////
+
+  for (std::multiset<SlCtrlPacketInfo_t>::iterator it = sortedControlMessages.begin(); it != sortedControlMessages.end() ; it++ )
+    {
+      int i = (*it).index;
+
+      bool ctrlError = false;
+      ctrlMessageFound = true;
+      
+      if (m_ctrlErrorModelEnabled)
+        {
+          bool rbDecoded = false;
+          for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin ();  rbIt != m_rxPacketInfo[i].rbBitmap.end() ; rbIt++)
+            {
+              if (rbDecodedBitmap.find (*rbIt) != rbDecodedBitmap.end()) 
+                {
+                  rbDecoded = true;
+                  ctrlError = true;
+                  NS_LOG_DEBUG (this << " RB " << *rbIt << " has already been decoded ");
+                  break;
+                }
+            }
+          if (!rbDecoded)
+            {
+              //if (!m_dropRbOnCollisionEnabled)//uncomment IF_CONDITION if PSCCH BLER is not considered in this mode!
+                //{
+                  double  errorRate;
+                  if (m_rxPacketInfo[i].m_rxControlMessage->GetMessageType() == LteControlMessage::SCI)
+                    {
+                      errorRate = LtePhyErrorModel::GetPscchBler (m_fadingModel,LtePhyErrorModel::SISO, GetMeanSinr (m_slSinrPerceived[i]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, m_rxPacketInfo[i].rbBitmap)).tbler;
+                      ctrlError = m_random->GetValue () > errorRate ? false : true;
+                      NS_LOG_DEBUG (this << " PSCCH Decoding, errorRate " << errorRate << " error " << ctrlError);
+                    }
+                  else if (m_rxPacketInfo[i].m_rxControlMessage->GetMessageType() == LteControlMessage::SCI_V2X)
+                    {
+                      std::vector<int> pscchBitmap = m_rxPacketInfo[i].rbBitmap;
+                      while (pscchBitmap.size() != 2)
+                      {
+                        pscchBitmap.pop_back(); 
+                      }
+                      errorRate = LtePhyErrorModel::GetPscchBler (m_fadingModel,LtePhyErrorModel::SISO, GetMeanSinr (m_slSinrPerceived[i]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, pscchBitmap)).tbler;
+                      ctrlError = m_random->GetValue () > errorRate ? false : true;
+                      NS_LOG_DEBUG (this << " PSCCH Decoding, errorRate " << errorRate << " error " << ctrlError);
+                    }
+                  else if (m_rxPacketInfo[i].m_rxControlMessage->GetMessageType() == LteControlMessage::MIB_SL)
+                    {
+                      errorRate = LtePhyErrorModel::GetPsbchBler (m_fadingModel,LtePhyErrorModel::SISO, GetMeanSinr (m_slSinrPerceived[i]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, m_rxPacketInfo[i].rbBitmap)).tbler;
+                      ctrlError = m_random->GetValue () > errorRate ? false : true;
+                      NS_LOG_DEBUG (this << " PSBCH Decoding, errorRate " << errorRate << " error " << ctrlError);
+                    }
+                  else
+                    {
+                      NS_LOG_DEBUG (this << " Unknown SL control message ");
+                    }
+                //}
+            }
+        }
+
+      if (!ctrlError)
+        {
+          error = false; //at least one control packet is OK
+          rxControlMessageOkList.push_back (m_rxPacketInfo[i].m_rxControlMessage);
+          rbDecodedBitmap.insert ( m_rxPacketInfo[i].rbBitmap.begin(), m_rxPacketInfo[i].rbBitmap.end());
+        }
+
+      if(m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () == LteControlMessage::SCI)
+        {
+
+          // Add PSCCH trace.
+          NS_ASSERT(m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () == LteControlMessage::SCI);
+          Ptr<SciLteControlMessage> msg2 = DynamicCast<SciLteControlMessage> (m_rxPacketInfo[i].m_rxControlMessage);
+          SciListElement_s sci = msg2->GetSci ();
+
+          PhyReceptionStatParameters params;
+          params.m_timestamp = Simulator::Now ().GetMilliSeconds ();
+          params.m_cellId = m_cellId;
+          params.m_imsi = 0; // it will be set by DlPhyTransmissionCallback in LteHelper
+          params.m_rnti = sci.m_rnti;
+          params.m_layer =  0;
+          params.m_mcs = sci.m_mcs;
+          params.m_size = sci.m_tbSize;
+          params.m_rv = sci.m_rbStart;    // Using m_rv to store the RB start
+          params.m_ndi = sci.m_rbLen;     // Using m_ndi to store the number of RBs used
+          params.m_correctness = (uint8_t)!ctrlError;
+          params.m_sinrPerRb = 0; // NOT USED, JUST INITIALIZED TO AVOID COMPILATION WARNING!
+          params.m_txMode = m_transmissionMode; // NOT USED, JUST INITIALIZED TO AVOID COMPILATION WARNING!
+          // Call trace
+          m_slPscchReception (params);
+        }
+      else if (m_rxPacketInfo[i].m_rxControlMessage->GetMessageType() == LteControlMessage::SCI_V2X)
+        {
+          // Add PSCCH trace.
+          Ptr<SciLteControlMessageV2x> msg2 = DynamicCast<SciLteControlMessageV2x> (m_rxPacketInfo[i].m_rxControlMessage);
+          SciListElementV2x sci = msg2->GetSci ();
+          
+          PhyReceptionStatParameters params;
+          params.m_timestamp = Simulator::Now().GetMilliSeconds();
+          params.m_cellId = m_cellId; 
+          params.m_imsi = 0;
+          params.m_rnti = sci.m_rnti; 
+          params.m_layer = 0;
+          params.m_mcs = sci.m_mcs;
+          params.m_size = sci.m_tbSize; 
+          params.m_rv = sci.m_resPscch; // Using m_rv to store the pscch resource
+          params.m_ndi = 0; 
+          params.m_correctness = (uint8_t)!ctrlError; 
+          params.m_sinrPerRb = 0; // NOT USED, JUST INITIALIZED TO AVOID COMPILATION WARNING!
+          params.m_txMode = m_transmissionMode; // NOT USED, JUST INITIALIZED TO AVOID COMPILATION WARNING!
+          // Call trace
+          m_slPscchReception(params);
+        }
+    }
+
+  if (ctrlMessageFound)
+    {
+      if (!error)
+        {
+          if (!m_ltePhyRxCtrlEndOkCallback.IsNull ())
+            {
+              NS_LOG_DEBUG (this << " PSCCH OK");
+              m_ltePhyRxCtrlEndOkCallback (rxControlMessageOkList);
+            }
+        }
+      else
+        {
+          if (!m_ltePhyRxCtrlEndErrorCallback.IsNull ())
+            {
+              NS_LOG_DEBUG (this << " PSCCH Error");
+              m_ltePhyRxCtrlEndErrorCallback ();
+            }
+        }
+    }
+
+    //discovery
+    
+    // error model and harq enabled for d2d discovery 
+    if (m_errorModelHarqD2dDiscoveryEnabled)
+    {
+      std::map<DiscTbId_t, uint32_t> expectedTbToSinrDiscIndex;
+      for (uint32_t i = 0 ; i < m_rxPacketInfo.size() ; i++)
+        {
+          //data isn't included and control is discovery message
+          if (m_rxPacketInfo[i].m_rxControlMessage)
+          {
+            if (!m_rxPacketInfo[i].m_rxPacketBurst && m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () == LteControlMessage::SL_DISC_MSG)
+              {
+                Ptr<LteControlMessage> rxCtrlMsg= m_rxPacketInfo[i].m_rxControlMessage;
+                Ptr<SlDiscMessage> msg = DynamicCast<SlDiscMessage> (rxCtrlMsg);
+                SlDiscMsg disc = msg->GetSlDiscMessage ();
+                bool exist = FilterRxApps (disc);
+                if (exist)
+                {
+                  // retrieve TB info of this packet
+                  DiscTbId_t tbId;
+                  tbId.m_rnti = disc.m_rnti;
+                  tbId.m_resPsdch = disc.m_resPsdch;
+                  expectedTbToSinrDiscIndex.insert (std::pair<DiscTbId_t, uint8_t> (tbId, i));
+
+                  std::list<Ptr<SidelinkDiscResourcePool> >::iterator discIt;
+                  for (discIt = m_discRxPools.begin (); discIt != m_discRxPools.end(); discIt++)
+                    {
+                      std::list<SidelinkDiscResourcePool::SidelinkTransmissionInfo> m_psdchTx = (*discIt)->GetPsdchTransmissions (disc.m_resPsdch);
+                      std::list<SidelinkDiscResourcePool::SidelinkTransmissionInfo>::iterator rxIt = m_psdchTx.begin ();
+                      if (rxIt != m_psdchTx.end())
+                        {
+                          //reception
+                          NS_LOG_INFO (this << " Expecting PSDCH reception RB " << (uint16_t) (disc.m_resPsdch));
+                          std::list<SidelinkDiscResourcePool::SidelinkTransmissionInfo>::iterator txIt = m_psdchTx.begin ();
+                          std::vector <int> rbMap;
+                          for (int i = txIt->rbStart ; i < txIt->rbStart + txIt->nbRb ; i++)
+                          {
+                            NS_LOG_LOGIC (this << " Receiving PSDCH on RB " << i);
+                            rbMap.push_back (i);
+                          }
+                      
+                          AddExpectedTb (disc.m_rnti, disc.m_resPsdch, m_psdchTx.size() % 4 == 0, rbMap, (4 - m_psdchTx.size () % 4));
+                        }
+                    }
+                }
+              }
+          }
+        }
+
+      //           
+      expectedDiscTbs_t::iterator itTbDisc = m_expectedDiscTbs.begin ();
+      std::map<DiscTbId_t, uint32_t>::iterator itSinrDisc;
+      while (itTbDisc!= m_expectedDiscTbs.end ())
+        {
+          itSinrDisc = expectedTbToSinrDiscIndex.find ((*itTbDisc).first);
+          //to check: m_ctrlErrorModelEnabled or should we have m_dataErrorModelEnabled enabled?
+          if ((m_ctrlErrorModelEnabled)&&(m_rxPacketInfo.size ()>0)&&(itSinrDisc != expectedTbToSinrDiscIndex.end())) // avoid to check for errors when there is no actual discovery transmitted
+            {   
+              // retrieve HARQ info
+              HarqProcessInfoList_t harqInfoList;
+              if ((*itTbDisc).second.ndi == 0)
+                {
+                  harqInfoList = m_harqPhyModule->GetHarqProcessInfoDisc ((*itTbDisc).first.m_rnti,(*itTbDisc).first.m_resPsdch);
+                  NS_LOG_DEBUG (this << " Nb Retx=" << harqInfoList.size());
+                  //std::cout << this << " Nb Retx=" << harqInfoList.size() << std::endl;
+                }
+                           
+              if (!m_nistErrorModelEnabled)
+                {
+                  NS_LOG_ERROR ("Any error model other than the NistErrorModel is not supported");
+                } 
+              else 
+                {
+                  TbErrorStats_t tbStats = LtePhyErrorModel::GetPsdchBler (m_fadingModel,LtePhyErrorModel::SISO, GetMeanSinr (m_slSinrPerceived[(*itSinrDisc).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTbDisc).second.rbBitmap),  harqInfoList);
+                  (*itTbDisc).second.sinr = tbStats.sinr;
+                  (*itTbDisc).second.corrupt = m_random->GetValue () > tbStats.tbler ? false : true;
+                  NS_LOG_DEBUG (this << " from RNTI " << (*itTbDisc).first.m_rnti << " TBLER " << tbStats.tbler << " corrupted " << (*itTbDisc).second.corrupt);
+                  //std::cout << this << " from RNTI " << (*itTbDisc).first.m_rnti << " TBLER " << tbStats.tbler << " corrupted " << (*itTbDisc).second.corrupt << " mean SINR " << GetMeanSinr (m_slSinrPerceived[(*itSinrDisc).second]*4, (*itTbDisc).second.rbBitmap) << std::endl;
+                }
+                  
+              //traces for discovery rx
+              //we would know it is discovery mcs=0 and size=232
+              PhyReceptionStatParameters params;
+              params.m_timestamp = Simulator::Now ().GetMilliSeconds ();
+              params.m_cellId = m_cellId;
+              params.m_imsi = 0; // it will be set by DlPhyTransmissionCallback in LteHelper
+              params.m_rnti = (*itTbDisc).first.m_rnti;
+              params.m_txMode = m_transmissionMode;
+              params.m_layer =  0;
+              params.m_mcs = 0; //for discovery, we use a fixed modulation (no mcs defined), use 0 to identify discovery
+              params.m_size = 232; // discovery message has a static size
+              params.m_rv = (*itTbDisc).second.rv;
+              params.m_ndi = (*itTbDisc).second.ndi;
+              params.m_correctness = (uint8_t)!(*itTbDisc).second.corrupt;
+              params.m_sinrPerRb = GetMeanSinr (m_slSinrPerceived[(*itSinrDisc).second]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, (*itTbDisc).second.rbBitmap);
+              params.m_rv = harqInfoList.size ();
+              m_slPhyReception (params);  
+            }
+          itTbDisc++;
+        }
+
+      
+
+      // handling collison for discovery
+      // same as sidelink control but taking into account HARQ
+      std::list<Ptr<LteControlMessage> > rxDiscMessageOkList;
+      
+      bool discError = true; 
+      bool discMessageFound = false;
+      std::set<SlCtrlPacketInfo_t> sortedDiscMessages;
+      std::set<int> discDecodedBitmap;
+
+      for (uint32_t i = 0 ; i < m_rxPacketInfo.size() ; i++)
+        {
+          Ptr<LteControlMessage> rxCtrlMsg= m_rxPacketInfo[i].m_rxControlMessage;
+          Ptr<SlDiscMessage> msg = DynamicCast<SlDiscMessage> (rxCtrlMsg);
+          if (msg)
+          {
+            SlDiscMsg disc = msg->GetSlDiscMessage ();
+            bool exist = FilterRxApps (disc);
+            if (exist)
+            {
+              if (m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () == LteControlMessage::SL_DISC_MSG) //if discovery message     
+                {
+                  double meanSinr = GetMeanSinr (m_slSinrPerceived[i], m_rxPacketInfo[i].rbBitmap);
+                  SlCtrlPacketInfo_t pInfo;
+                  pInfo.sinr = meanSinr;          
+                  pInfo.index = i;
+                  sortedDiscMessages.insert (pInfo);
+                }
+            }
+          }
+        }
+     
+      // check all sorted discovery messages
+      for (std::set<SlCtrlPacketInfo_t>::iterator it =sortedDiscMessages.begin(); it != sortedDiscMessages.end() ; it++ )
+        {
+          discMessageFound = true;
+          // retrieve TB info of this packet
+          int i = (*it).index;
+          Ptr<LteControlMessage> rxCtrlMsg= m_rxPacketInfo[i].m_rxControlMessage;
+          Ptr<SlDiscMessage> msg = DynamicCast<SlDiscMessage> (rxCtrlMsg);
+          SlDiscMsg disc = msg->GetSlDiscMessage ();
+          DiscTbId_t tbId;
+          tbId.m_rnti = disc.m_rnti;
+          tbId.m_resPsdch = disc.m_resPsdch;
+          
+          itTbDisc =  m_expectedDiscTbs.find (tbId);
+          NS_LOG_INFO (this << " Packet of " << tbId.m_rnti << " resPsdch " <<  (uint16_t) tbId.m_resPsdch); 
+
+          bool rbDecoded = false;
+          for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin ();  rbIt != m_rxPacketInfo[i].rbBitmap.end() ; rbIt++)
+            {
+              if (discDecodedBitmap.find (*rbIt) != discDecodedBitmap.end()) 
+              {
+                rbDecoded = true;
+                NS_LOG_DEBUG (this << " RB " << *rbIt << " has already been decoded ");
+                break;
+              }
+            }
+
+          if (itTbDisc!=m_expectedDiscTbs.end () && !rbDecoded)
+          {
+            if (!(*itTbDisc).second.corrupt)
+            {
+              discError = false; 
+              rxDiscMessageOkList.push_back (m_rxPacketInfo[i].m_rxControlMessage);
+              discDecodedBitmap.insert ( m_rxPacketInfo[i].rbBitmap.begin(), m_rxPacketInfo[i].rbBitmap.end());
+                        
+              //to add theta and sinr to DiscTxProbabilityModule
+              //assuming we have only one pool
+              Ptr<SlDiscMessage> msg = DynamicCast<SlDiscMessage> (m_rxPacketInfo[i].m_rxControlMessage);
+              SlDiscMsg disc = msg->GetSlDiscMessage ();
+              NS_LOG_DEBUG (this << " from RNTI " << disc.m_rnti << " ProSeAppCode " << disc.m_proSeAppCode.to_ulong () << " SINR " << (*it).sinr);
+            }
+
+            //store HARQ information
+            if (!(*itTbDisc).second.harqFeedbackSent)
+            {
+              (*itTbDisc).second.harqFeedbackSent = true;
+              //because we do not have feedbacks we do not reset HARQ now.
+              //we will do it when we expect a new data
+              if ((*itTbDisc).second.corrupt)
+              {
+                if (!m_nistErrorModelEnabled)
+                {
+                  NS_LOG_ERROR ("Any error model other than the NistErrorModel is not supported");
+                }
+                else
+                {
+                  m_harqPhyModule->UpdateDiscHarqProcessStatus (tbId.m_rnti, tbId.m_resPsdch, (*itTbDisc).second.sinr);
+                }
+              }
+            }
+          }     
+        }
+
+      if (discMessageFound)
+      {        
+        if (!discError)
+        {
+          if (!m_ltePhyRxCtrlEndOkCallback.IsNull ())
+          {
+            NS_LOG_DEBUG (this << " Discovery OK");
+            m_ltePhyRxCtrlEndOkCallback (rxDiscMessageOkList);
+          }
+        }
+        else
+        {
+          if (!m_ltePhyRxCtrlEndErrorCallback.IsNull ())
+          {
+            NS_LOG_DEBUG (this << " Discovery Error");
+            m_ltePhyRxCtrlEndErrorCallback ();
+          }
+        }
+      }
+    }
+      
+    //error model and harq not enabled for d2d discovery
+    //discard colliding packets for discovery
+    else
+    {
+      for (uint32_t i = 0 ; i < m_rxPacketInfo.size() ; i++)
+        { 
+          if (m_rxPacketInfo[i].m_rxControlMessage) //if control packet               
+            {
+              if (!m_rxPacketInfo[i].m_rxPacketBurst && m_rxPacketInfo[i].m_rxControlMessage->GetMessageType () == LteControlMessage::SL_DISC_MSG)
+              {
+                Ptr<LteControlMessage> rxCtrlMsg= m_rxPacketInfo[i].m_rxControlMessage;
+                Ptr<SlDiscMessage> msg = DynamicCast<SlDiscMessage> (rxCtrlMsg);
+                SlDiscMsg disc = msg->GetSlDiscMessage ();
+                bool exist = FilterRxApps (disc);
+                if (exist)
+                {
+                  double meanSinr = GetMeanSinr (m_slSinrPerceived[i], m_rxPacketInfo[i].rbBitmap);
+                  SlCtrlPacketInfo_t pInfo;
+                  pInfo.sinr = meanSinr;          
+                  pInfo.index = i;
+                  sortedControlMessages.insert (pInfo);
+                }
+              }
+            }
+        }
+       
+      NS_ASSERT (m_slSinrPerceived.size ()>0);
+      uint32_t countRb=0;
+      for (Values::iterator vit = m_slSinrPerceived[0].ValuesBegin (); vit != m_slSinrPerceived[0].ValuesEnd (); ++vit)
+      {
+        countRb++;
+      }
+
+      std::vector<uint32_t> rbsUsed (countRb, 0);
+      for (uint32_t i = 0; i < m_rxPacketInfo.size (); i++) 
+        {
+          for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin ();  rbIt != m_rxPacketInfo[i].rbBitmap.end() ; rbIt++)
+            {
+              rbsUsed[*rbIt]++;
+            }
+        }
+
+     
+      for (std::set<SlCtrlPacketInfo_t>::iterator it =sortedControlMessages.begin(); it != sortedControlMessages.end() ; it++ )
+        {
+          int i = (*it).index;
+
+          bool ctrlError = false;
+          ctrlMessageFound = true;
+          
+          if (m_ctrlErrorModelEnabled)
+            {          
+              bool rbDecoded = false;
+              for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin ();  rbIt != m_rxPacketInfo[i].rbBitmap.end() ; rbIt++)
+                {
+                  if (rbDecodedBitmap.find (*rbIt) != rbDecodedBitmap.end()) 
+                    {
+                      rbDecoded = true;
+                      NS_LOG_DEBUG (this << " RB " << *rbIt << " has already been decoded ");
+                      break;
+                    }
+                }
+              if (!rbDecoded)
+                {
+                  bool ok = true;
+                  for (std::vector<int>::iterator rbIt =  m_rxPacketInfo[i].rbBitmap.begin ();  rbIt != m_rxPacketInfo[i].rbBitmap.end() ; rbIt++)
+                    {
+                      if (rbsUsed [*rbIt] > 1) 
+                        {
+                          ok = false;
+                          break;
+                        }
+                    }
+                  if (ok)
+                    {
+                      double  errorRate = LtePhyErrorModel::GetPscchBler (m_fadingModel,LtePhyErrorModel::SISO, GetMeanSinr (m_slSinrPerceived[i]*4 /* Average gain for SIMO based on [CatreuxMIMO] */, m_rxPacketInfo[i].rbBitmap)).tbler;
+                      ctrlError = m_random->GetValue () > errorRate ? false : true;
+                      NS_LOG_DEBUG (this << " Discovery Decodification, errorRate " << errorRate << " error " << ctrlError);
+                    } 
+                  else
+                    {
+                      ctrlError = true;
+                    }
+                }
+              else {
+                ctrlError = true;
+              }
+            }
+          
+          if (!ctrlError)
+            {
+              error = false; //at least one control packet is OK
+              rxControlMessageOkList.push_back (m_rxPacketInfo[i].m_rxControlMessage);
+              rbDecodedBitmap.insert ( m_rxPacketInfo[i].rbBitmap.begin(), m_rxPacketInfo[i].rbBitmap.end());
+
+              Ptr<SlDiscMessage> msg = DynamicCast<SlDiscMessage> (m_rxPacketInfo[i].m_rxControlMessage);
+              SlDiscMsg disc = msg->GetSlDiscMessage ();
+              NS_LOG_DEBUG (this << " from RNTI " << disc.m_rnti << " ProSeAppCode " << disc.m_proSeAppCode.to_ulong () << " SINR " << (*it).sinr);
+            } 
+        }
+
+        if (ctrlMessageFound)
+        {
+          if (!error)
+            {
+              if (!m_ltePhyRxCtrlEndOkCallback.IsNull ())
+                {
+                  NS_LOG_DEBUG (this << "Discovery OK");
+                  m_ltePhyRxCtrlEndOkCallback (rxControlMessageOkList);
+                }
+            }
+          else
+            {
+              if (!m_ltePhyRxCtrlEndErrorCallback.IsNull ())
+                {
+                  NS_LOG_DEBUG (this << "Discovery Error");
+                  m_ltePhyRxCtrlEndErrorCallback ();
+                }
+            }
+        }    
+    }
+
+  //done with sidelink data, control and discovery
+  ChangeState (IDLE);
+  m_rxPacketBurstList.clear ();
+  m_rxControlMessageList.clear ();
+  //m_rxControlMessageRbMap.clear ();
+  m_rxPacketInfo.clear ();
+  m_expectedSlTbs.clear ();
+  m_expectedSlV2xTbs.clear ();
+  m_expectedDiscTbs.clear ();
+}
 
 void
 LteSpectrumPhy::EndRxDlCtrl ()
@@ -1213,6 +2728,19 @@ LteSpectrumPhy::SetCellId (uint16_t cellId)
   m_cellId = cellId;
 }
 
+void 
+LteSpectrumPhy::AddL1GroupId (uint8_t groupId)
+{
+  NS_LOG_FUNCTION (this << (uint16_t) groupId);
+  m_l1GroupIds.insert(groupId);
+}
+
+void 
+LteSpectrumPhy::RemoveL1GroupId (uint8_t groupId)
+{
+  m_l1GroupIds.erase (groupId);
+}
+
 void
 LteSpectrumPhy::SetComponentCarrierId (uint8_t componentCarrierId)
 {
@@ -1253,6 +2781,24 @@ void
 LteSpectrumPhy::AddCtrlSinrChunkProcessor (Ptr<LteChunkProcessor> p)
 {
   m_interferenceCtrl->AddSinrChunkProcessor (p);
+}
+
+void
+LteSpectrumPhy::AddSlSinrChunkProcessor (Ptr<LteSlChunkProcessor> p)
+{
+  m_interferenceSl->AddSinrChunkProcessor (p);
+}
+
+void
+LteSpectrumPhy::AddSlSignalChunkProcessor (Ptr<LteSlChunkProcessor> p)
+{
+  m_interferenceSl->AddRsPowerChunkProcessor (p);
+}
+
+void
+LteSpectrumPhy::AddSlInterferenceChunkProcessor (Ptr<LteSlChunkProcessor> p)
+{
+  m_interferenceSl->AddInterferenceChunkProcessor (p);
 }
 
 void 
@@ -1299,6 +2845,85 @@ LteSpectrumPhy::AssignStreams (int64_t stream)
   return 1;
 }
 
+double 
+LteSpectrumPhy::GetMeanSinr (const SpectrumValue& sinr, const std::vector<int>& map)
+{
+  SpectrumValue sinrCopy = sinr;
+  double sinrLin = 0;
+  for (uint32_t i = 0; i < map.size (); i++)
+    {
+      sinrLin += sinrCopy[map.at (i)];
+    }
+  return sinrLin / map.size();
+}
+
+LteSpectrumPhy::State
+LteSpectrumPhy::GetState ()
+{
+  return m_state;
+}
+
+void
+LteSpectrumPhy::SetSlssid (uint64_t slssid)
+{
+  NS_LOG_FUNCTION (this);
+  m_slssId = slssid;
+}
+
+void
+LteSpectrumPhy::SetLtePhyRxSlssCallback (LtePhyRxSlssCallback c)
+{
+  NS_LOG_FUNCTION (this);
+  m_ltePhyRxSlssCallback = c;
+}
+
+void 
+LteSpectrumPhy::SetRxPool (Ptr<SidelinkDiscResourcePool> newpool)
+{
+  m_discRxPools.push_back (newpool);
+}
+
+void 
+LteSpectrumPhy::SetRxPool (Ptr<SidelinkCommResourcePoolV2x> newpool)
+{
+  m_slV2xRxPools.push_back (newpool);
+}
+
+void 
+LteSpectrumPhy::AddDiscTxApps (std::list<uint32_t> apps)
+{
+    m_discTxApps = apps;
+}
+
+void 
+LteSpectrumPhy::AddDiscRxApps (std::list<uint32_t> apps)
+{
+  m_discRxApps = apps;
+}
+
+bool 
+LteSpectrumPhy::FilterRxApps (SlDiscMsg disc)
+{
+  NS_LOG_FUNCTION (this << disc.m_proSeAppCode);
+  bool exist = false;
+  for (std::list<uint32_t>::iterator it = m_discRxApps.begin (); it != m_discRxApps.end (); ++it)
+  {
+    //std::cout << "app=" << *it  << std::endl;
+    if ((std::bitset <184>)*it == disc.m_proSeAppCode)
+    {
+      exist = true;
+    }
+  }
+
+  return exist;
+}
+
+void
+LteSpectrumPhy::SetDiscNumRetx (uint8_t retx)
+{
+  NS_LOG_FUNCTION (this << retx);
+  m_harqPhyModule->SetDiscNumRetx (retx);
+}
 
 
 } // namespace ns3

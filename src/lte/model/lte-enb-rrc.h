@@ -21,6 +21,7 @@
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *          NIST (D2D)
  */
 
 #ifndef LTE_ENB_RRC_H
@@ -63,6 +64,99 @@ class LteEnbRrc;
 class Packet;
 
 
+
+/**
+   * \ingroup lte
+   * Manages Sidelink information for this eNodeB
+   */
+  class LteEnbRrcSl : public Object
+  {
+    friend class LteUeRrc;
+    friend class UeManager;
+    
+   public:
+    LteEnbRrcSl ();
+
+    virtual ~LteEnbRrcSl (void);
+
+    /**
+     * \brief makes a copy of the sidelink configuration
+     * \return a copy of the sidelink configuration
+     */
+    Ptr<LteEnbRrcSl> Copy ();
+
+    
+    // inherited from Object
+  protected:
+    virtual void DoInitialize ();
+    virtual void DoDispose ();
+
+  public:
+    /**
+     *  Register this type.
+     *  \return The object TypeId.
+     */
+    static TypeId GetTypeId (void);
+
+    // /**
+    //  * Sets the SIB 18 information
+    //  * \param sib18 The content of the system information block to broadcast
+    //  */
+    // void SetSystemInformationBlockType18 (LteRrcSap::SystemInformationBlockType18 sib18);
+
+    /**
+     * Gets the SIB 18 information
+     * \return The SIB 18
+     */
+    LteRrcSap::SystemInformationBlockType18 GetSystemInformationType18 ();
+
+    void SetSlEnabled (bool status);
+    
+    bool IsSlEnabled ();
+
+    /**
+     * Utility function to preconfigure dedicated pools for UEs
+     * \param group The group associated with the pool
+     * \param pool The pool information
+     */
+    void AddPreconfiguredDedicatedPool (uint32_t group, LteRrcSap::SlCommTxResourcesSetup pool);
+
+    /**
+     * Sets the pool to be used in exceptional cases
+     * \param pool The pool information
+     */
+    void SetCommTxPoolExceptional (LteRrcSap::SlCommTxPoolList pool);
+    
+  private:
+
+    bool IsPoolInList (LteRrcSap::SlCommResourcePool pool, LteRrcSap::SlCommResourcePool *pools, int nbPool);
+      
+    //Add information about pools allocated for communication and discovery
+
+    //Maps the UE's RNTI to its associated dedicated resources
+    //std::map <uint16_t, LteRrcSap::SlCommTxResourcesSetup> m_dedicatedPoolMap;
+
+    //Pre-provisioned dedicated pools using the group L2 address
+    std::map <uint32_t, LteRrcSap::SlCommTxResourcesSetup> m_preconfigDedicatedPoolMap;
+
+    //Pre-provisioned pool for exceptional cases
+    LteRrcSap::SlCommTxPoolList m_preconfigCommTxPoolExceptional;
+    
+    ///NIST: System Information Block Type 18 currently broadcasted
+    LteRrcSap::SystemInformationBlockType18 m_sib18;
+
+    ///NIST: Indicates if ProSe is enabled
+    bool m_slEnabled;
+
+    struct ActivePoolInfo {
+      Ptr<SidelinkCommResourcePool> m_pool; //pointer to the pool
+      LteRrcSap::SlCommTxResourcesSetup m_poolSetup; //pool in a different format
+      std::set<uint16_t> m_rntiSet; //list of UEs assigned to the pool
+    };
+
+    std::map <uint32_t, LteEnbRrcSl::ActivePoolInfo> m_activePoolMap;
+    
+  }; //end of 'class LteEnbRrcSl
 
 /**
  * \ingroup lte
@@ -288,9 +382,14 @@ public:
   void RecvRrcConnectionReestablishmentComplete (LteRrcSap::RrcConnectionReestablishmentComplete msg);
   /**
    * Implement the LteEnbRrcSapProvider::RecvMeasurementReport interface.
-   * \param msg the measrurement report
+   * \param msg the measurement report
    */
   void RecvMeasurementReport (LteRrcSap::MeasurementReport msg);
+  /**
+   * Part of the RRC protocol. Implement the LteEnbRrcSapProvider::RecvSidelinkUeInformation interface.
+   * \param msg the sidelink information message
+   */
+  void RecvSidelinkUeInformation (LteRrcSap::SidelinkUeInformation msg);
 
 
   // METHODS FORWARDED FROM ENB CMAC SAP //////////////////////////////////////
@@ -564,6 +663,12 @@ private:
 
   /// Pending start data radio bearers
   bool m_pendingStartDataRadioBearers;
+
+  /**
+   * List of destinations for sidelink communications
+   */
+  std::vector<uint32_t> m_slDestinations;
+  bool m_slPoolChanged;
 
 }; // end of `class UeManager`
 
@@ -1084,6 +1189,13 @@ private:
    * \param msg the LteRrcSap::MeasurementReport
    */
   void DoRecvMeasurementReport (uint16_t rnti, LteRrcSap::MeasurementReport msg);
+  /**
+   * Part of the RRC protocol. Forwarding LteEnbRrcSapProvider::RecvSidelinkUeInformation interface to UeManager::RecvSidelinkUeInformation.
+   * \param rnti the RNTI
+   * \param msg the LteRrcSap::SidelinkUeInformation
+   */
+  void DoRecvSidelinkUeInformation (uint16_t rnti, LteRrcSap::SidelinkUeInformation msg);
+
 
   // S1 SAP methods
 
@@ -1580,6 +1692,11 @@ private:
   bool m_carriersConfigured; ///< are carriers configured
 
   std::map<uint8_t, Ptr<ComponentCarrierEnb>> m_componentCarrierPhyConf; ///< component carrier phy configuration
+
+  /**
+   * Sidelink configuration
+   */
+  Ptr<LteEnbRrcSl> m_sidelinkConfiguration;
 
 }; // end of `class LteEnbRrc`
 

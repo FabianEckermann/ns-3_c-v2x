@@ -17,6 +17,7 @@
  *
  * Authors: Nicola Baldo <nbaldo@cttc.es>
  *          Lluis Parcerisa <lparcerisa@cttc.cat>
+ * Modified by: NIST
  */
 
 #include <ns3/fatal-error.h>
@@ -229,6 +230,24 @@ LteUeRrcProtocolReal::DoSendRrcConnectionReestablishmentComplete (LteRrcSap::Rrc
   m_setupParameters.srb1SapProvider->TransmitPdcpSdu (transmitPdcpSduParameters);
 }
 
+void
+LteUeRrcProtocolReal::DoSendSidelinkUeInformation (LteRrcSap::SidelinkUeInformation msg)
+{
+  Ptr<Packet> packet = Create<Packet> ();
+
+  //todo: define header
+  SidelinkUeInformationHeader sidelinkUeInformationHeader;
+  sidelinkUeInformationHeader.SetMessage (msg);
+
+  packet->AddHeader (sidelinkUeInformationHeader);
+  
+  LtePdcpSapProvider::TransmitPdcpSduParameters transmitPdcpSduParameters;
+  transmitPdcpSduParameters.pdcpSdu = packet;
+  transmitPdcpSduParameters.rnti = m_rnti;
+  transmitPdcpSduParameters.lcid = 1;
+
+  m_setupParameters.srb1SapProvider->TransmitPdcpSdu (transmitPdcpSduParameters);
+}
 
 void 
 LteUeRrcProtocolReal::SetEnbRrcSapProvider ()
@@ -523,7 +542,7 @@ LteEnbRrcProtocolReal::DoSendSystemInformation (uint16_t cellId, LteRrcSap::Syst
               if (ueRrc->GetCellId () == cellId)
                 {
                   NS_LOG_LOGIC ("sending SI to IMSI " << ueDev->GetImsi ());
-                  ueRrc->GetLteUeRrcSapProvider ()->RecvSystemInformation (msg);
+                  //ueRrc->GetLteUeRrcSapProvider ()->RecvSystemInformation (msg);
                   Simulator::Schedule (RRC_REAL_MSG_DELAY, 
                                        &LteUeRrcSapProvider::RecvSystemInformation,
                                        ueRrc->GetLteUeRrcSapProvider (), 
@@ -683,12 +702,14 @@ LteEnbRrcProtocolReal::DoReceivePdcpSdu (LtePdcpSapUser::ReceivePdcpSduParameter
   RrcConnectionReconfigurationCompleteHeader rrcConnectionReconfigurationCompleteHeader;
   RrcConnectionReestablishmentCompleteHeader rrcConnectionReestablishmentCompleteHeader;
   RrcConnectionSetupCompleteHeader rrcConnectionSetupCompleteHeader;
+  SidelinkUeInformationHeader sidelinkUeInformationHeader; 
 
   // Declare possible messages to receive
   LteRrcSap::MeasurementReport measurementReportMsg;
   LteRrcSap::RrcConnectionReconfigurationCompleted rrcConnectionReconfigurationCompleteMsg;
   LteRrcSap::RrcConnectionReestablishmentComplete rrcConnectionReestablishmentCompleteMsg;
   LteRrcSap::RrcConnectionSetupCompleted rrcConnectionSetupCompletedMsg;
+  LteRrcSap::SidelinkUeInformation sidelinkUeInformationMsg;
 
   // Deserialize packet and call member recv function with appropriate structure
   switch ( rrcUlDcchMessage.GetMessageType () )
@@ -712,6 +733,11 @@ LteEnbRrcProtocolReal::DoReceivePdcpSdu (LtePdcpSapUser::ReceivePdcpSduParameter
       params.pdcpSdu->RemoveHeader (rrcConnectionSetupCompleteHeader);
       rrcConnectionSetupCompletedMsg = rrcConnectionSetupCompleteHeader.GetMessage ();
       m_enbRrcSapProvider->RecvRrcConnectionSetupCompleted (params.rnti, rrcConnectionSetupCompletedMsg);
+      break;
+    case 20:
+      params.pdcpSdu->RemoveHeader (sidelinkUeInformationHeader);
+      sidelinkUeInformationMsg = sidelinkUeInformationHeader.GetMessage ();
+      m_enbRrcSapProvider->RecvSidelinkUeInformation (params.rnti,sidelinkUeInformationMsg);
       break;
     }
 }

@@ -15,9 +15,13 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Nicola Baldo <nbaldo@cttc.es>
- *         Giuseppe Piro  <g.piro@poliba.it>
- * Modified by: Marco Miozzo <mmiozzo@cttc.es> (introduce physical error model)
+ * Authors: Nicola Baldo <nbaldo@cttc.es>
+ *          Giuseppe Piro  <g.piro@poliba.it>
+ * Modified by:
+ *          Marco Miozzo <mmiozzo@cttc.es> (introduce physical error model)
+ *          NIST (D2D)
+ *          Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *          Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #ifndef LTE_SPECTRUM_PHY_H
@@ -36,11 +40,14 @@
 #include <ns3/generic-phy.h>
 #include <ns3/packet-burst.h>
 #include <ns3/lte-interference.h>
+#include <ns3/lte-sl-interference.h>
+#include <ns3/lte-phy-error-model.h>
 #include "ns3/random-variable-stream.h"
 #include <map>
 #include <ns3/ff-mac-common.h>
 #include <ns3/lte-harq-phy.h>
 #include <ns3/lte-common.h>
+#include <ns3/sl-pool.h>
 
 namespace ns3 {
 
@@ -78,10 +85,93 @@ struct tbInfo_t
   bool downlink; ///< whether is downlink
   bool corrupt; ///< whether is corrupt
   bool harqFeedbackSent; ///< is HARQ feedback sent
+  double sinr; ///< mean SINR
 };
 
 typedef std::map<TbId_t, tbInfo_t> expectedTbs_t; ///< expectedTbs_t typedef
 
+struct SlTbId_t
+{
+  uint16_t m_rnti; //source SL-RNTI
+  uint8_t m_l1dst; //layer 1 group Id
+  
+  public:
+  SlTbId_t ();
+  SlTbId_t (const uint16_t a, const uint8_t b);
+  
+  friend bool operator == (const SlTbId_t &a, const SlTbId_t &b);
+  friend bool operator < (const SlTbId_t &a, const SlTbId_t &b);
+};
+ 
+struct SltbInfo_t
+{
+  uint8_t ndi; ///< ndi
+  uint16_t size; ///< size
+  uint8_t mcs; ///< mcs
+  std::vector<int> rbBitmap; ///< rb bitmap
+  // uint8_t harqProcessId; ///< HARQ process id
+  uint8_t rv; ///< rv
+  double mi; ///< mi
+  // bool downlink; ///< whether is downlink
+  bool corrupt; ///< whether is corrupt
+  bool harqFeedbackSent; ///< is HARQ feedback sent
+  double sinr; ///< mean SINR
+};
+
+typedef std::map<SlTbId_t, SltbInfo_t> expectedSlTbs_t;
+
+struct SlV2xTbId_t
+{
+  uint16_t m_rnti; //source SL-RNTI
+  
+  public:
+  SlV2xTbId_t ();
+  SlV2xTbId_t (const uint16_t a);
+  
+  friend bool operator == (const SlV2xTbId_t &a, const SlV2xTbId_t &b);
+  friend bool operator < (const SlV2xTbId_t &a, const SlV2xTbId_t &b);
+};
+
+struct SlV2xTbInfo_t{
+  uint32_t size; ///< size
+  uint8_t mcs; ///< mcs
+  std::vector<int> rbBitmap; ///< rb bitmap
+  double mi; ///< mi
+  bool corrupt; ///< whether is corrupt
+  bool harqFeedbackSent; ///< is HARQ feedback sent
+  double sinr; ///< mean SINR
+};
+
+typedef std::map<SlV2xTbId_t, SlV2xTbInfo_t> expectedSlV2xTbs_t; 
+
+
+struct DiscTbId_t
+{
+  uint16_t m_rnti; //source SL-RNTI
+  uint8_t m_resPsdch; 
+  
+  public:
+  DiscTbId_t ();
+  DiscTbId_t (const uint16_t a, const uint8_t b);
+  
+  friend bool operator == (const DiscTbId_t &a, const DiscTbId_t &b);
+  friend bool operator < (const DiscTbId_t &a, const DiscTbId_t &b);
+  
+};
+
+struct DisctbInfo_t
+{
+  uint8_t ndi; ///< ndi
+  uint8_t resPsdch;
+  std::vector<int> rbBitmap;///< rb bitmap
+  uint8_t rv; ///< rv
+  double mi; ///< mi
+  bool corrupt; ///< whether is corrupt
+  bool harqFeedbackSent; ///< is HARQ feedback sent
+  double sinr; //mean SINR
+};
+
+typedef std::map<DiscTbId_t, DisctbInfo_t> expectedDiscTbs_t;
 
 class LteNetDevice;
 class AntennaModel;
@@ -89,12 +179,33 @@ class LteControlMessage;
 struct LteSpectrumSignalParametersDataFrame;
 struct LteSpectrumSignalParametersDlCtrlFrame;
 struct LteSpectrumSignalParametersUlSrsFrame;
+struct LteSpectrumSignalParametersSlFrame;
+
+/**
+ * Structure for sidelink packets being received
+ */
+struct SlRxPacketInfo_t
+{
+  std::vector<int> rbBitmap;
+  Ptr<PacketBurst> m_rxPacketBurst;
+  Ptr<LteControlMessage> m_rxControlMessage;
+};
+
+struct SlCtrlPacketInfo_t
+{
+  double sinr;
+  int index;
+
+  friend bool operator == (const SlCtrlPacketInfo_t &a, const SlCtrlPacketInfo_t &b);
+  friend bool operator < (const SlCtrlPacketInfo_t &a, const SlCtrlPacketInfo_t &b);
+};
 
 /**
 * This method is used by the LteSpectrumPhy to notify the PHY that a
 * previously started RX attempt has terminated without success
 */
 typedef Callback< void > LtePhyRxDataEndErrorCallback;
+
 /**
 * This method is used by the LteSpectrumPhy to notify the PHY that a
 * previously started RX attempt has been successfully completed.
@@ -126,6 +237,11 @@ typedef Callback< void > LtePhyRxCtrlEndErrorCallback;
 */
 typedef Callback< void, uint16_t, Ptr<SpectrumValue> > LtePhyRxPssCallback;
 
+/**
+* This method is used by the LteSpectrumPhy to notify the UE PHY that a
+* SLSS has been received
+*/
+typedef Callback< void, uint16_t, Ptr<SpectrumValue> > LtePhyRxSlssCallback;
 
 /**
 * This method is used by the LteSpectrumPhy to notify the PHY about
@@ -162,7 +278,7 @@ public:
    */
   enum State
   {
-    IDLE, TX_DL_CTRL, TX_DATA, TX_UL_SRS, RX_DL_CTRL, RX_DATA, RX_UL_SRS
+    IDLE, TX_DL_CTRL, TX_DATA, TX_UL_V2X_SCI, TX_UL_SRS, RX_DL_CTRL, RX_DATA, RX_UL_SRS
   };
 
   /**
@@ -193,6 +309,11 @@ public:
    */
   void StartRxDlCtrl (Ptr<LteSpectrumSignalParametersDlCtrlFrame> lteDlCtrlRxParams);
   /**
+   * \brief Start receive SL data function
+   * \param params Ptr<LteSpectrumSignalParametersSlFrame>
+   */
+  void StartRxSlData (Ptr<LteSpectrumSignalParametersSlFrame> params);
+  /**
    * \brief Start receive UL SRS function
    * \param lteUlSrsRxParams Ptr<LteSpectrumSignalParametersUlSrsFrame>
    */
@@ -222,7 +343,19 @@ public:
    * 
    */
   void Reset ();
- 
+  
+  /**
+   * Clear expected SL TBs
+   *
+   */
+  void ClearExpectedSlTb ();
+
+  /**
+   * Clear expected SL TBs
+   *
+   */
+  void ClearExpectedSlV2xTb ();
+
   /**
    * set the AntennaModel to be used
    * 
@@ -242,7 +375,20 @@ public:
   * started, false otherwise.
   */
   bool StartTxDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration);
-  
+
+  /**
+  * Start a transmission of data frame in DL and UL
+  *
+  *
+  * @param pb the burst of packets to be transmitted in PDSCH/PUSCH
+  * @param ctrlMsgList the list of LteControlMessage to send
+  * @param duration the duration of the data frame 
+  *
+  * @return true if an error occurred and the transmission was not
+  * started, false otherwise.
+  */
+  bool StartTxSlDataFrame (Ptr<PacketBurst> pb, std::list<Ptr<LteControlMessage> > ctrlMsgList, Time duration, uint8_t groupId);
+
   /**
   * Start a transmission of control frame in DL
   *
@@ -339,6 +485,20 @@ public:
    */
   void SetComponentCarrierId (uint8_t componentCarrierId);
 
+  /** 
+   * \brief Add a new L1 group for filtering
+   * 
+   * \param groupId the L1 Group Identifier
+   */
+  void AddL1GroupId (uint8_t groupId);
+
+  /** 
+   * \brief Remove a new L1 group for filtering
+   * 
+   * \param groupId the L1 Group Identifier
+   */
+  void RemoveL1GroupId (uint8_t groupId);
+
   /**
   *
   *
@@ -378,13 +538,34 @@ public:
   */
   void AddInterferenceDataChunkProcessor (Ptr<LteChunkProcessor> p);
   
-  
   /** 
   * 
   * 
   * \param p the new LteChunkProcessor to be added to the ctrl processing chain
   */
   void AddCtrlSinrChunkProcessor (Ptr<LteChunkProcessor> p);
+
+  /** 
+  * 
+  * 
+  * \param p the new LteSlChunkProcessor to be added to the sidelink processing chain
+  */
+  void AddSlSinrChunkProcessor (Ptr<LteSlChunkProcessor> p);
+
+  /** 
+  * 
+  * 
+  * \param p the new LteSlChunkProcessor to be added to the sidelink processing chain
+  */
+  void AddSlSignalChunkProcessor (Ptr<LteSlChunkProcessor> p);
+ 
+  /** 
+  * 
+  * 
+  * \param p the new LteSlChunkProcessor to be added to the sidelink processing chain
+  */
+  void AddSlInterferenceChunkProcessor (Ptr<LteSlChunkProcessor> p);
+   
   
   /** 
   * 
@@ -401,6 +582,40 @@ public:
   */
   void AddExpectedTb (uint16_t  rnti, uint8_t ndi, uint16_t size, uint8_t mcs, std::vector<int> map, uint8_t layer, uint8_t harqId, uint8_t rv, bool downlink);
 
+  /** 
+  * 
+  * 
+  * \param rnti the rnti of the source of the TB
+  * \param l1dst the layer 1 destination id of the TB
+  * \param ndi new data indicator flag
+  * \param size the size of the TB
+  * \param mcs the MCS of the TB
+  * \param map the map of RB(s) used
+  * \param rv the rv
+  */
+  void AddExpectedTb (uint16_t  rnti, uint8_t l1dst, uint8_t ndi, uint16_t size, uint8_t mcs, std::vector<int> map, uint8_t rv);
+
+  /** 
+  * 
+  * for v2x communication
+  * \param rnti the rnti of the source of the TB
+  * \param l1dst the layer 1 destination id of the TB
+  * \param size the size of the TB
+  * \param mcs the MCS of the TB
+  * \param map the map of RB(s) used
+  */
+  void AddExpectedTbV2x (uint16_t rnti, uint16_t size, uint8_t mcs, std::vector<int> map);
+
+  /**
+   * for discovery
+   * no mcs, size fixe to 232, no l1dst
+   * \param rnti the rnti of the source of the TB
+   * \param resPsdch indetifier
+   * \param ndi new data indicator flag
+   * \param map map of RBs used
+   * \param rv revision
+   */
+  void AddExpectedTb (uint16_t  rnti, uint8_t resPsdch, uint8_t ndi, std::vector<int> map, uint8_t rv);
 
   /** 
   * 
@@ -412,16 +627,64 @@ public:
   /** 
   * 
   * 
+  * \param sinr vector of sinr perceived per each RB per sidelink packet
+  */
+  void UpdateSlSinrPerceived (std::vector <SpectrumValue> sinr);
+ 
+  /** 
+  * 
+  * 
+  * \param sinr vector of signal perceived per each RB per sidelink packet
+  */
+  void UpdateSlSigPerceived (std::vector <SpectrumValue> signal);
+
+  /**
+   * 
+   * 
+   * \return vector of signal perceived per each RB per sidelink packet
+   */
+  std::vector <SpectrumValue> GetSlSignalPerceived();
+
+  /**
+   * 
+   * 
+   * \return 
+   */
+  std::vector <SpectrumValue> GetSlInterferencePerceived();
+
+  /** 
+  * 
+  * 
+  * \param sinr vector of interference perceived per each RB per sidelink packet
+  */
+  void UpdateSlIntPerceived (std::vector <SpectrumValue> interference);
+
+  /** 
+  * 
+  * 
   * \param txMode UE transmission mode (SISO, MIMO tx diversity, ...)
   */
   void SetTransmissionMode (uint8_t txMode);
   
-
   /** 
    * 
    * \return the previously set channel
    */
   Ptr<SpectrumChannel> GetChannel ();
+
+  /**
+    * Set the slssid of the SyncRef to which the UE is synchronized
+    * \param slssid the SyncRef identifier
+    */
+  void SetSlssid (uint64_t slssid);
+
+   /**
+    * set the callback for the reception of the SLSS as part
+    * of the interconnections between the LteSpectrumPhy and the UE PHY
+    *
+    * @param c the callback
+    */
+  void SetLtePhyRxSlssCallback (LtePhyRxSlssCallback c);
 
   /// allow LteUePhy class friend access
   friend class LteUePhy;
@@ -435,6 +698,15 @@ public:
   * \return the number of stream indices assigned by this model
   */
   int64_t AssignStreams (int64_t stream);
+  State GetState ();
+
+  void SetRxPool (Ptr<SidelinkDiscResourcePool> newpool);
+  void SetRxPool (Ptr<SidelinkCommResourcePoolV2x> newpool); 
+
+  void AddDiscTxApps (std::list<uint32_t> apps);
+  void AddDiscRxApps (std::list<uint32_t> apps);
+     
+  void SetDiscNumRetx (uint8_t retx);
 
 private:
   /** 
@@ -455,6 +727,8 @@ private:
   void EndRxDlCtrl ();
   /// End receive UL SRS function
   void EndRxUlSrs ();
+  /// End reveive SL data function
+  void EndRxSlData ();
   
   /** 
   * \brief Set transmit mode gain function
@@ -463,8 +737,11 @@ private:
   * \param gain the gain to set
   */
   void SetTxModeGain (uint8_t txMode, double gain);
-  
 
+  double GetMeanSinr (const SpectrumValue& sinr, const std::vector<int>& map);
+  
+  bool FilterRxApps (SlDiscMsg disc);
+  
   Ptr<MobilityModel> m_mobility; ///< the modility model
   Ptr<AntennaModel> m_antenna; ///< the antenna model
   Ptr<NetDevice> m_device; ///< the device
@@ -504,21 +781,56 @@ private:
   
   uint8_t m_componentCarrierId; ///< the component carrier ID
   expectedTbs_t m_expectedTbs; ///< the expected TBS
+  expectedDiscTbs_t m_expectedDiscTbs; ///< the expected discovery TBS
   SpectrumValue m_sinrPerceived; ///< the preceived SINR 
+
+  // Information for sidelink communication
+  Ptr<LteSlInterference> m_interferenceSl;
+  std::set<uint8_t> m_l1GroupIds; // identifiers for D2D layer 1 filtering
+  expectedSlTbs_t m_expectedSlTbs;  
+  std::vector<SpectrumValue> m_slSinrPerceived; //SINR for each D2D packet received
+  std::vector<SpectrumValue> m_slSignalPerceived; //Signal for each D2D packet received
+  std::vector<SpectrumValue> m_slInterferencePerceived; //Interference for each D2D packet received
+  //std::map<Ptr<LteControlMessage>, std::vector <int> > m_rxControlMessageRbMap;
+  std::vector<SlRxPacketInfo_t> m_rxPacketInfo;
+
+  // Information for sidelink V2x communication
+  expectedSlV2xTbs_t m_expectedSlV2xTbs;
 
   /// Provides uniform random variables.
   Ptr<UniformRandomVariable> m_random;
   bool m_dataErrorModelEnabled; ///< when true (default) the phy error model is enabled
   bool m_ctrlErrorModelEnabled; ///< when true (default) the phy error model is enabled for DL ctrl frame
-  
+
+  bool m_ctrlFullDuplexEnabled; // when true the PSCCH operates in Full Duplexmode (disabled by default).
+
+  bool m_dropRbOnCollisionEnabled; //when true, drop all receptions on colliding RBs regardless SINR value.
+
+  /// NIST Physical error model
+  bool m_nistErrorModelEnabled; // when true (not default) use NIST error model
+  LtePhyErrorModel::LteFadingModel m_fadingModel;
+
+  bool m_slBlerEnabled; //(true by default) when false BLER in the PSSCH is not modeled.
+
   uint8_t m_transmissionMode; ///< for UEs: store the transmission mode
   uint8_t m_layersNum; ///< layers num
   std::vector <double> m_txModeGain; ///< duplicate value of LteUePhy
+
+  bool m_ulDataSlCheck;
 
   Ptr<LteHarqPhy> m_harqPhyModule; ///< the HARQ phy module
   LtePhyDlHarqFeedbackCallback m_ltePhyDlHarqFeedbackCallback; ///< the LTE phy DL HARQ feedback callback
   LtePhyUlHarqFeedbackCallback m_ltePhyUlHarqFeedbackCallback; ///< the LTE phy UL HARQ feedback callback
 
+  Ptr<LteSpectrumPhy> m_halfDuplexPhy;
+  bool m_errorModelHarqD2dDiscoveryEnabled;
+  
+  std::list< Ptr<SidelinkDiscResourcePool> > m_discRxPools;
+
+  std::list< Ptr<SidelinkCommResourcePoolV2x>> m_slV2xRxPools; 
+  
+  std::list<uint32_t> m_discTxApps;
+  std::list<uint32_t> m_discRxApps;
 
   /**
    * Trace information regarding PHY stats from DL Rx perspective
@@ -526,18 +838,37 @@ private:
    */
   TracedCallback<PhyReceptionStatParameters> m_dlPhyReception;
 
-  
   /**
    * Trace information regarding PHY stats from UL Rx perspective
    * PhyReceptionStatParameters (see lte-common.h)
    */
   TracedCallback<PhyReceptionStatParameters> m_ulPhyReception;
 
+  /**
+   * Trace information regarding PHY stats from UL Rx perspective
+   * PhyReceptionStatParameters (see lte-common.h)
+   */
+  TracedCallback<PhyReceptionStatParameters> m_slPhyReception;
+
+  /**
+   * Trace information regarding PHY stats from SL Rx PSCCH perspective
+   * PhyReceptionStatParameters (see lte-common.h)
+   */
+  TracedCallback<PhyReceptionStatParameters> m_slPscchReception;
+
   EventId m_endTxEvent; ///< end transmit event
   EventId m_endRxDataEvent; ///< end receive data event
   EventId m_endRxDlCtrlEvent; ///< end receive DL control event
   EventId m_endRxUlSrsEvent; ///< end receive UL SRS event
-  
+
+  /**
+   * The Sidelink Synchronization Signal Identifier (SLSSID)
+   */
+  uint64_t m_slssId;
+  /**
+   * Callback used to notify the PHY about the reception of a SLSS
+   */
+  LtePhyRxSlssCallback  m_ltePhyRxSlssCallback;
 
 };
 

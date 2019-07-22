@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include <ns3/fatal-error.h>
@@ -165,6 +166,16 @@ LteUeRrcProtocolIdeal::DoSendMeasurementReport (LteRrcSap::MeasurementReport msg
 {
    Simulator::Schedule (RRC_IDEAL_MSG_DELAY, 
                         &LteEnbRrcSapProvider::RecvMeasurementReport,
+                        m_enbRrcSapProvider,
+                        m_rnti, 
+                        msg);
+}
+
+void
+LteUeRrcProtocolIdeal::DoSendSidelinkUeInformation (LteRrcSap::SidelinkUeInformation msg)
+{
+  Simulator::Schedule (RRC_IDEAL_MSG_DELAY, 
+                        &LteEnbRrcSapProvider::RecvSidelinkUeInformation,
                         m_enbRrcSapProvider,
                         m_rnti, 
                         msg);
@@ -348,7 +359,7 @@ LteEnbRrcProtocolIdeal::DoSendSystemInformation (uint16_t cellId, LteRrcSap::Sys
               if (ueRrc->GetCellId () == cellId)
                 {       
                   NS_LOG_LOGIC ("sending SI to IMSI " << ueDev->GetImsi ());
-                  ueRrc->GetLteUeRrcSapProvider ()->RecvSystemInformation (msg);
+                  //ueRrc->GetLteUeRrcSapProvider ()->RecvSystemInformation (msg);
                   Simulator::Schedule (RRC_IDEAL_MSG_DELAY, 
                                        &LteUeRrcSapProvider::RecvSystemInformation,
                                        ueRrc->GetLteUeRrcSapProvider (), 

@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -84,12 +85,49 @@ public:
    */
   virtual void SendData (Ptr<Packet> packet, uint8_t bid) = 0;
 
+  /** 
+   * \brief Send a data packet for sidelink.
+   *
+   * \param packet the packet
+   * \param group The L2 group address
+   */
+  virtual void SendSidelinkData (Ptr<Packet> packet, uint32_t group) = 0;
 
   /** 
    * \brief Tell the RRC entity to release the connection.
    *
    */
   virtual void Disconnect () = 0;
+
+  /**
+   * \brief Tell the RRC to activate Sidelink Bearer 
+   *
+   * \param group The L2 address of interest
+   * \param tx Indicates if the interest is to transmit
+   * \param rx Indicates if the interest is to receive
+   */
+  virtual void ActivateSidelinkRadioBearer (uint32_t group, bool tx, bool rx) = 0;
+  
+  /**
+   * \brief Tell the RRC to tear down Sidelink Bearer 
+   *
+   * \param group The L2 address of the group the UE is no longer interested
+   */
+  virtual void DeactivateSidelinkRadioBearer (uint32_t group) = 0;
+  
+  /**
+   * tell RRC to add discovery applications
+   * \param apps applications to be added
+   * \param rxtx 0 for monitoring and 1 for announcing
+   */
+  virtual void AddDiscoveryApps (std::list<uint32_t> apps, bool rxtx) = 0;
+  
+  /**
+   * tell RRC to remove discovery applications
+   * \param apps applications to be removed
+   * \param rxtx 0 for monitoring and 1 for announcing
+   */
+  virtual void RemoveDiscoveryApps (std::list<uint32_t> apps, bool rxtx) = 0;
 
 };
 
@@ -133,6 +171,13 @@ public:
    */
   virtual void RecvData (Ptr<Packet> packet) = 0;
 
+  /**
+   * Notify the NAS that the sidelink has been setup
+   *
+   * \param group The group that was setup
+   */
+  virtual void NotifySidelinkRadioBearerActivated (uint32_t group) = 0;
+
 };
 
 
@@ -160,7 +205,15 @@ public:
   virtual void ForceCampedOnEnb (uint16_t cellId, uint32_t dlEarfcn);
   virtual void Connect (void);
   virtual void SendData (Ptr<Packet> packet, uint8_t bid);
+  virtual void SendSidelinkData (Ptr<Packet> packet, uint32_t group);
   virtual void Disconnect ();
+  //communication
+  virtual void ActivateSidelinkRadioBearer (uint32_t group, bool tx, bool rx);
+  virtual void DeactivateSidelinkRadioBearer (uint32_t group);
+  //Discovery
+  virtual void AddDiscoveryApps (std::list<uint32_t> apps, bool rxtx);
+  virtual void RemoveDiscoveryApps (std::list<uint32_t> apps, bool rxtx);
+
 
 private:
   MemberLteAsSapProvider ();
@@ -214,12 +267,46 @@ MemberLteAsSapProvider<C>::SendData (Ptr<Packet> packet, uint8_t bid)
 }
 
 template <class C>
+void
+MemberLteAsSapProvider<C>::SendSidelinkData (Ptr<Packet> packet, uint32_t group)
+{
+  m_owner->DoSendSidelinkData (packet, group);
+}
+
+template <class C>
 void 
 MemberLteAsSapProvider<C>::Disconnect ()
 {
   m_owner->DoDisconnect ();
 }
 
+template <class C>
+void
+MemberLteAsSapProvider<C>::ActivateSidelinkRadioBearer (uint32_t group, bool tx, bool rx)
+{
+  m_owner->DoActivateSidelinkRadioBearer (group, tx, rx);
+}
+
+template <class C>
+void
+MemberLteAsSapProvider<C>::DeactivateSidelinkRadioBearer (uint32_t group)
+{
+  m_owner->DoDeactivateSidelinkRadioBearer (group);
+}
+
+template <class C>
+void
+MemberLteAsSapProvider<C>::AddDiscoveryApps (std::list<uint32_t> apps, bool rxtx)
+{
+  m_owner->DoAddDiscoveryApps (apps, rxtx);
+}
+
+template <class C>
+void
+MemberLteAsSapProvider<C>::RemoveDiscoveryApps (std::list<uint32_t> apps, bool rxtx)
+{
+  m_owner->DoRemoveDiscoveryApps (apps, rxtx);
+}
 
 /**
  * Template for the implementation of the LteAsSapUser as a member
@@ -242,6 +329,7 @@ public:
   virtual void NotifyConnectionFailed ();
   virtual void RecvData (Ptr<Packet> packet);
   virtual void NotifyConnectionReleased ();
+  virtual void NotifySidelinkRadioBearerActivated (uint32_t group);
 
 private:
   MemberLteAsSapUser ();
@@ -285,6 +373,13 @@ void
 MemberLteAsSapUser<C>::NotifyConnectionReleased ()
 {
   m_owner->DoNotifyConnectionReleased ();
+}
+
+template <class C>
+void 
+MemberLteAsSapUser<C>::NotifySidelinkRadioBearerActivated (uint32_t group)
+{
+  m_owner->DoNotifySidelinkRadioBearerActivated (group);
 }
 
 

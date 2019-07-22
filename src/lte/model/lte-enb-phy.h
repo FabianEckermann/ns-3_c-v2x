@@ -61,8 +61,9 @@ public:
    *
    * \param dlPhy the downlink LteSpectrumPhy instance
    * \param ulPhy the uplink LteSpectrumPhy instance
+   * \param EnbEnablePhyLayer enable enb phy layer ?
    */
-  LteEnbPhy (Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy);
+  LteEnbPhy (Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy, bool EnbEnablePhyLayer = true);
 
   virtual ~LteEnbPhy ();
 

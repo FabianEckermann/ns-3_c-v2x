@@ -17,6 +17,7 @@
  *
  * Authors: Nicola Baldo <nbaldo@cttc.es>
  *          Lluis Parcerisa <lparcerisa@cttc.cat>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -136,6 +137,12 @@ private:
    * \param msg LteRrcSap::MeasurementReport 
    */
   void DoSendMeasurementReport (LteRrcSap::MeasurementReport msg);
+  /**
+   * Send measurement sidelink ue information function
+   *
+   * \param msg LteRrcSap::SidelinkUeInformation
+   */
+  void DoSendSidelinkUeInformation (LteRrcSap::SidelinkUeInformation msg);
 
   /// Set ENB RRC SAP provider
   void SetEnbRrcSapProvider ();

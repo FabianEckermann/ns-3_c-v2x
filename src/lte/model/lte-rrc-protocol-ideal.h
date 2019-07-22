@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -129,6 +130,13 @@ private:
    * \param msg LteRrcSap::MeasurementReport 
    */
   void DoSendMeasurementReport (LteRrcSap::MeasurementReport msg);
+  /**
+   * Send sidelink ue information function
+   *
+   * \param msg LteRrcSap::SidelinkUeInformation
+   */
+  void DoSendSidelinkUeInformation (LteRrcSap::SidelinkUeInformation msg);
+
 
   /// Set ENB RRC SAP provider
   void SetEnbRrcSapProvider ();

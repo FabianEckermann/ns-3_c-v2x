@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include "lte-radio-bearer-info.h"
@@ -109,6 +110,47 @@ LteSignalingRadioBearerInfo::GetTypeId (void)
                    PointerValue (),
                    MakePointerAccessor (&LteRadioBearerInfo::m_pdcp),
                    MakePointerChecker<LtePdcp> ())
+    ;
+  return tid;
+}
+
+
+TypeId 
+LteSidelinkRadioBearerInfo::GetTypeId (void)
+{
+  static TypeId
+    tid =
+    TypeId ("ns3::LteSidelinkRadioBearerInfo")
+    .SetParent<LteRadioBearerInfo> ()
+    .AddConstructor<LteSidelinkRadioBearerInfo> ()
+    .AddAttribute ("DestinationL2Id", "The destination identifier for the communication",
+                   TypeId::ATTR_GET, // allow only getting it.
+                   UintegerValue (0), // unused (attribute is read-only
+                   MakeUintegerAccessor (&LteSidelinkRadioBearerInfo::m_destinationL2Id),
+                   MakeUintegerChecker<uint32_t> ())
+    .AddAttribute ("logicalChannelIdentity", "The id of the Logical Channel corresponding to this Data Radio Bearer",
+                   TypeId::ATTR_GET, // allow only getting it.
+                   UintegerValue (0), // unused (attribute is read-only
+                   MakeUintegerAccessor (&LteSidelinkRadioBearerInfo::m_logicalChannelIdentity),
+                   MakeUintegerChecker<uint8_t> ())
+    .AddAttribute ("LteRlc", "RLC instance of the radio bearer.",
+                   PointerValue (),
+                   MakePointerAccessor (&LteRadioBearerInfo::m_rlc),
+                   MakePointerChecker<LteRlc> ())
+    .AddAttribute ("LtePdcp", "PDCP instance of the radio bearer.",
+                   PointerValue (),
+                   MakePointerAccessor (&LteRadioBearerInfo::m_pdcp),
+                   MakePointerChecker<LtePdcp> ())
+    // .AddAttribute ("Tx", "If true, indicates that the UE is interesting in transmitting to the group.",
+    //                TypeId::ATTR_GET, // allow only getting it.
+    //                BooleanValue (false),
+    //                MakeBooleanAccessor (&LteSidelinkRadioBearerInfo::m_tx),
+    //                MakeBooleanChecker ())
+    // .AddAttribute ("Rx", "If true, indicates that the UE is interesting in receiving from the group.",
+    //                TypeId::ATTR_GET, // allow only getting it.
+    //                BooleanValue (false),
+    //                MakeBooleanAccessor (&LteSidelinkRadioBearerInfo::m_rx),
+    //                MakeBooleanChecker ())
     ;
   return tid;
 }

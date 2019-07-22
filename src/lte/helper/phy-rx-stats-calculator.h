@@ -18,6 +18,7 @@
  * Author: Jaume Nin <jnin@cttc.es>
  * modified by: Marco Miozzo <mmiozzo@cttc.es>
  *        Convert MacStatsCalculator in PhyRxStatsCalculator
+ *              NIST
  */
 
 #ifndef PHY_RX_STATS_CALCULATOR_H_
@@ -94,6 +95,32 @@ public:
   std::string GetDlRxOutputFilename (void);
 
   /**
+   * Set the name of the file where the SL RX PHY statistics will be stored.
+   *
+   * @param outputFilename string with the name of the file
+   */
+  void SetSlRxOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the SL RX PHY statistics will be stored.
+   * @return the name of the file where the SL RX PHY statistics will be stored
+   */
+  std::string GetSlRxOutputFilename (void);
+
+  /**
+   * Set the name of the file where the SL RX PSCCH statistics will be stored.
+   *
+   * @param outputFilename string with the name of the file
+   */
+  void SetSlPscchRxOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the SL RX PSCCH statistics will be stored.
+   * @return the name of the file where the SL RX PHY statistics will be stored
+   */
+  std::string GetSlPscchRxOutputFilename (void);
+
+  /**
    * Notifies the stats calculator that an downlink reception has occurred.
    * @param params Trace information regarding PHY reception stats
    */
@@ -104,6 +131,18 @@ public:
    * @param params Trace information regarding PHY reception stats
    */
   void UlPhyReception (PhyReceptionStatParameters params);
+
+  /**
+   * Notifies the stats calculator that an sidelink reception has occurred.
+   * @param params Trace information regarding PHY reception stats
+   */
+  void SlPhyReception (PhyReceptionStatParameters params);
+  
+  /**
+   * Notifies the stats calculator that an sidelink reception has occurred.
+   * @param params Trace information regarding PHY reception stats
+   */
+  void SlPscchReception (PhyReceptionStatParameters params);
 
   /** 
    * trace sink
@@ -124,6 +163,27 @@ public:
    */
   static void UlPhyReceptionCallback (Ptr<PhyRxStatsCalculator> phyRxStats,
                                std::string path, PhyReceptionStatParameters params);
+
+  /** 
+   * trace sink
+   * 
+   * \param phyRxStats 
+   * \param path 
+   * \param params 
+   */
+  static void SlPhyReceptionCallback (Ptr<PhyRxStatsCalculator> phyRxStats,
+                               std::string path, PhyReceptionStatParameters params);
+
+  /** 
+   * trace sink
+   * 
+   * \param phyRxStats 
+   * \param path 
+   * \param params 
+   */
+  static void SlPscchReceptionCallback (Ptr<PhyRxStatsCalculator> phyRxStats,
+                               std::string path, PhyReceptionStatParameters params);
+
 private:
 
   /**
@@ -141,6 +201,22 @@ private:
    * files have not been opened yet
    */
   bool m_ulRxFirstWrite;
+
+  /**
+   * When writing SL RX PHY statistics first time to file,
+   * columns description is added. Then next lines are
+   * appended to file. This value is true if output
+   * files have not been opened yet
+   */
+  bool m_slRxFirstWrite;
+  
+  /**
+   * When writing SL RX PSCCH statistics first time to file,
+   * columns description is added. Then next lines are
+   * appended to file. This value is true if output
+   * files have not been opened yet
+   */
+  bool m_slPscchRxFirstWrite;
 
 };
 

@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Jaume Nin <jnin@cttc.es>
+ * Modified by: NIST
  */
 
 #include "lte-stats-calculator.h"
@@ -83,6 +84,53 @@ LteStatsCalculator::GetDlOutputFilename (void)
   return m_dlOutputFilename;
 }
 
+void
+LteStatsCalculator::SetSlUeOutputFilename (std::string outputFilename)
+{
+  m_slUeOutputFilename = outputFilename;
+}
+
+std::string
+LteStatsCalculator::GetSlUeOutputFilename (void)
+{
+  return m_slUeOutputFilename;
+}
+
+void
+LteStatsCalculator::SetSlPscchOutputFilename (std::string outputFilename)
+{
+  m_slPscchOutputFilename = outputFilename;
+}
+
+std::string
+LteStatsCalculator::GetSlPscchOutputFilename (void)
+{
+  return m_slPscchOutputFilename;
+}
+
+void
+LteStatsCalculator::SetSlSchUeOutputFilename (std::string outputFilename)
+{
+  m_slSchUeOutputFilename = outputFilename;
+}
+
+std::string
+LteStatsCalculator::GetSlSchUeOutputFilename (void)
+{
+  return m_slSchUeOutputFilename;
+}
+
+void
+LteStatsCalculator::SetSlOutputFilename (std::string outputFilename)
+{
+  m_slOutputFilename = outputFilename;
+}
+
+std::string
+LteStatsCalculator::GetSlOutputFilename (void)
+{
+  return m_slOutputFilename;
+}
 
 bool
 LteStatsCalculator::ExistsImsiPath (std::string path)

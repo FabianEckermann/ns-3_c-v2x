@@ -17,7 +17,10 @@
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
  * Modified by: Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
- *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation) 
+ *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *              NIST
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #ifndef LTE_HELPER_H
@@ -38,7 +41,11 @@
 #include <ns3/radio-bearer-stats-calculator.h>
 #include <ns3/radio-bearer-stats-connector.h>
 #include <ns3/epc-tft.h>
+#include <ns3/lte-enb-rrc.h>
+#include <ns3/lte-ue-rrc.h>
+#include <ns3/lte-spectrum-phy.h>
 #include <ns3/mobility-model.h>
+#include <ns3/lte-sl-tft.h>
 #include <ns3/component-carrier-enb.h>
 #include <ns3/cc-helper.h>
 #include <map>
@@ -127,6 +134,18 @@ public:
    */
   void SetEpcHelper (Ptr<EpcHelper> h);
 
+  /**
+   * Set eNBs created after this call to enable.
+   *
+   */
+  void EnableNewEnbPhy ();
+
+  /**
+   * Set eNBs created after this call to disable.
+   *
+   */
+  void DisableNewEnbPhy ();
+
   /** 
    * Set the type of path loss model to be used for both DL and UL channels.
    * 
@@ -160,6 +179,19 @@ public:
    * \return the scheduler type
    */
   std::string GetSchedulerType () const; 
+
+  /** 
+   * Set the type of UL scheduler to be used by UEs devices.
+   *
+   * \param type the UE scheduler to set 
+   */
+  void SetUlSchedulerType (std::string type);
+
+  /**
+   *
+   * \return the UL scheduler type
+   */
+  std::string GetUlSchedulerType () const;
 
   /**
    * Set an attribute for the scheduler to be created.
@@ -474,8 +506,76 @@ public:
    *
    *  \warning Requires the use of EPC mode. See SetEpcHelper() method.
    */
-
   void DeActivateDedicatedEpsBearer (Ptr<NetDevice> ueDevice, Ptr<NetDevice> enbDevice, uint8_t bearerId);
+  
+  /**
+   * Activate a dedicated EPS bearer on a given set of UE devices.
+   *
+   * \param ueDevices the set of UE devices
+   * \param tft the Traffic Flow Template that identifies the traffic to go on this bearer
+   */
+  void ActivateSidelinkBearer (NetDeviceContainer ueDevices, Ptr<LteSlTft> tft);
+
+  /**
+   * Activate a sidelink bearer on a given UE device.
+   *
+   * \param ueDevice the UE device
+   * \param tft the Traffic Flow Template that identifies the traffic to go on this bearer.
+   */
+  void ActivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft);
+
+  /**
+   * Deactivate a sidelink bearer on a given set of UE devices.
+   *
+   * \param ueDevices the set of UE devices
+   * \param tft Sidelink bearer information which is to be de-activated
+   */
+  void DeactivateSidelinkBearer (NetDeviceContainer ueDevices, Ptr<LteSlTft> tft);
+
+  /**
+   *  \brief Manually trigger sidelink bearer de-activation at specific simulation time
+   *  \param ueDevice the UE on which sidelink bearer to be de-activated must be of the type LteUeNetDevice
+   *  \param tft Sidelink bearer information which is to be de-activated
+   *
+   *  \warning Requires the use of EPC mode. See SetLteEpcHelper() method.
+   */
+  void DeactivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft);
+  
+ /**
+   * Activate discovery for given UEs for certain applications
+   * 
+   * \param ueDevices the set of UE devices
+   * \param apps the applications to start
+   * \param rxtx the interest in monitoring or announcing (0 for rx and 1 for tx)
+   */
+  void StartDiscovery (NetDeviceContainer ueDevices, std::list<uint32_t> apps, bool rxtx);
+
+  /**
+   *  Activate discovery for one UE for given applications
+   *
+   * \param ueDevice the UE device
+   * \param apps the applications to start
+   * \param rxtx the interest in monitoring or announcing (0 for rx and 1 for tx)
+   */
+  void StartDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx);
+
+  /**
+   * Deactivate discovery for given UEs for certain applications
+   *
+   * \param ueDevices the set of UE devices
+   * \param apps the applicaions to stop
+   * \param rxtx the interest in monitoring or announcing (0 for rx and 1 for tx)
+   */
+  void StopDiscovery (NetDeviceContainer ueDevices, std::list<uint32_t> apps, bool rxtx);
+
+  /**
+   *  Deactivate discovery for one UE for given applications
+   *  \param ueDevice the UE device
+   *  \param apps the applications to stop
+   *  \param rxtx the interest in monitoring or announcing (0 for rx and 1 for tx)
+   */
+  void StopDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx);
+
   /**
    * Create an X2 interface between all the eNBs in a given set.
    *
@@ -586,6 +686,11 @@ public:
   void EnableUlPhyTraces (void);
 
   /**
+   * Enable trace sinks for SL PHY layer.
+   */
+  void EnableSlPhyTraces (void);
+
+  /**
    * Enable trace sinks for DL transmission PHY layer.
    */
   void EnableDlTxPhyTraces (void);
@@ -596,6 +701,11 @@ public:
   void EnableUlTxPhyTraces (void);
 
   /**
+   * Enable trace sinks for SL transmission PHY layer.
+   */
+  void EnableSlTxPhyTraces (void);
+
+  /**
    * Enable trace sinks for DL reception PHY layer.
    */
   void EnableDlRxPhyTraces (void);
@@ -604,6 +714,16 @@ public:
    * Enable trace sinks for UL reception PHY layer.
    */
   void EnableUlRxPhyTraces (void);
+
+  /**
+   * Enable trace sinks for SL reception PHY layer.
+   */
+  void EnableSlRxPhyTraces (void);
+
+  /**
+   * Enable trace sinks for SL reception PHY layer.
+   */
+  void EnableSlPscchRxPhyTraces (void);
 
   /**
    * Enable trace sinks for MAC layer.
@@ -619,6 +739,16 @@ public:
    * Enable trace sinks for UL MAC layer.
    */
   void EnableUlMacTraces (void);
+
+  /**
+   * Enable trace sinks for SL UE MAC layer.
+   */
+  void EnableSlUeMacTraces (void);
+
+  /**
+   * Enable trace sinks for SL UE MAC layer.
+   */
+  void EnableSlSchUeMacTraces (void);
 
   /**
    * Enable trace sinks for RLC layer.
@@ -657,6 +787,91 @@ public:
    * \return the number of stream indices (possibly zero) that have been assigned
   */
   int64_t AssignStreams (NetDeviceContainer c, int64_t stream);
+
+  /**
+   * Deploys the Sidelink configuration to the eNodeBs
+   * \param enbDevices List of devices where to configure sidelink
+   * \param slConfiguration Sidelink configuration
+   */
+  void InstallSidelinkConfiguration (NetDeviceContainer enbDevices, Ptr<LteEnbRrcSl> slConfiguration);
+
+  /**
+   * Deploys the Sidelink configuration to the eNodeB
+   * \param enbDevice The eNodeB where to configure sidelink
+   * \param slConfiguration Sidelink configuration
+   */
+  void InstallSidelinkConfiguration (Ptr<NetDevice> enbDevice, Ptr<LteEnbRrcSl> slConfiguration);
+
+  /**
+   * Deploys the Sidelink configuration to the UEs
+   * \param ueDevices List of devices where to configure sidelink
+   * \param slConfiguration Sidelink configuration
+   */
+  void InstallSidelinkConfiguration (NetDeviceContainer ueDevices, Ptr<LteUeRrcSl> slConfiguration);
+
+  /**
+   * Deploys the Sidelink configuration to the Ue
+   * \param ueDevice The UE where to configure sidelink
+   * \param slConfiguration Sidelink configuration
+   */
+  void InstallSidelinkConfiguration (Ptr<NetDevice> ueDevice, Ptr<LteUeRrcSl> slConfiguration);
+
+  /**
+   * Deploys the Sidelink configuration to the UEs
+   * \param ueDevices List of devices where to configure sidelink
+   * \param slConfiguration Sidelink configuration
+   */
+  void InstallSidelinkV2xConfiguration (NetDeviceContainer ueDevices, Ptr<LteUeRrcSl> slConfiguration);
+
+  /**
+   * Deploys the V2X Sidelink configuration to the Ue
+   * \param ueDevice The UE where to configure sidelink
+   * \param slConfiguration Sidelink configuration
+   */
+  void InstallSidelinkV2xConfiguration (Ptr<NetDevice> ueDevice, Ptr<LteUeRrcSl> slConfiguration);
+
+  /**
+   * Compute the RSRP between the given nodes for the given propagation loss model
+   * This code is derived from the multi-model-spectrum-channel class. It can be used for both uplink and downlink
+   * \param propagationLoss The loss model
+   * \param psd The power spectral density of the transmitter
+   * \param txPhy The transmitter
+   * \param rxPhy The receiver
+   * \return The RSRP 
+   */
+  double DoCalcRsrp (Ptr<PropagationLossModel> propagationLoss, Ptr<SpectrumValue> psd, Ptr<SpectrumPhy> txPhy, Ptr<SpectrumPhy> rxPhy);
+
+  /**
+   * Compute the RSRP between the given nodes for the given propagation loss model
+   * This code is derived from the multi-model-spectrum-channel class. It can be used for both uplink and downlink
+   * \param propagationLoss The loss model
+   * \param txPower The transmit power
+   * \param txPhy The transmitter
+   * \param rxPhy The receiver
+   * \return The RSRP 
+   */
+  double DoCalcRsrp (Ptr<PropagationLossModel> propagationLoss, double txPower, Ptr<SpectrumPhy> txPhy, Ptr<SpectrumPhy> rxPhy);
+
+  /**
+   * Computes the S-RSRP between 2 UEs. Information about the uplink frequency and band is necessary  to be able to call the function before the simulation starts.
+   * \param txPower Transmit power for the reference signal
+   * \param ulEarfcn Uplink frequency
+   * \param ulBandwidth Uplink bandwidth
+   * \param txDevice Transmitter UE
+   * \param rxDevice Receiver UE
+   * \return RSRP value
+   */
+  double CalcSidelinkRsrp (double txPower, double ulEarfcn, double ulBandwidth, Ptr<NetDevice> txDevice, Ptr<NetDevice> rxDevice);
+
+  /**
+   * Computes the RSRP between a transmitter UE and a receiver UE as defined in TR 36.843. Information about the uplink frequency and band is necessary  to be able to call the function before the simulation starts. 
+   * \param txPower Transmit power for the reference signal
+   * \param ulEarfcn Uplink frequency
+   * \param txDevice Transmitter UE
+   * \param rxDevice Receiver UE
+   * \return RSRP value
+   */
+  double CalcSidelinkRsrpEval (double txPower, double ulEarfcn, Ptr<NetDevice> txDevice, Ptr<NetDevice> rxDevice);
 
   /** 
    * \return a pointer to the SpectrumChannel instance used for the uplink
@@ -744,6 +959,10 @@ private:
 
   /// Factory of MAC scheduler object.
   ObjectFactory m_schedulerFactory;
+
+  /// Factory of MAC UE scheduler object.
+  ObjectFactory m_UlschedulerFactory;
+
   /// Factory of FFR (frequency reuse) algorithm object.
   ObjectFactory m_ffrAlgorithmFactory;
   /// Factory of handover algorithm object.
@@ -817,17 +1036,45 @@ private:
    * RRC signaling. If false, LteRrcProtocolReal will be used.
    */
   bool m_useIdealRrc;
+
   /**
    * The `AnrEnabled` attribute. Activate or deactivate Automatic Neighbour
    * Relation function.
    */
   bool m_isAnrEnabled;
+
   /**
    * The `UsePdschForCqiGeneration` attribute. If true, DL-CQI will be
    * calculated from PDCCH as signal and PDSCH as interference. If false,
    * DL-CQI will be calculated from PDCCH as signal and PDCCH as interference.
    */
   bool m_usePdschForCqiGeneration;
+
+  /**
+   * The `UseSidelink` attribute. If true, the UEs will contain additional 
+   * spectrum phy model to receive sidelink communication
+   */
+  bool m_useSidelink;
+
+  /** 
+   * This attribute check if the UEs are allowed to perform ProSe direct discovery
+   * Annoncements and Monitoring requests are not implemented, 
+   * only direct discovery messages are exchanged
+   */
+  bool m_useDiscovery;
+
+  /**
+   * The `UseSameUlDlPropagationCondition` attribute. If true, the UEs will have 
+   * the same shadowing and LOS condition for both UL and DL
+   * False per default
+   */
+  bool m_sameUlDlPropagationCondition;
+
+  /** 
+   * Enables/Disables eNB physical layer upon creation
+   * True per default
+   */
+  bool m_EnbEnablePhyLayer;
 
   /**
    * The `UseCa` attribute. If true, Carrier Aggregation is enabled.

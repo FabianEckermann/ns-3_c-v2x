@@ -15,8 +15,9 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Manuel Requena <manuel.requena@cttc.es>
- *         Nicola Baldo <nbaldo@cttc.es>
+ * Authors: Manuel Requena <manuel.requena@cttc.es>
+ *          Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include "ns3/simulator.h"
@@ -148,6 +149,8 @@ LteRlcTm::DoNotifyTxOpportunity (uint32_t bytes, uint8_t layer, uint8_t harqId, 
   params.pdu = packet;
   params.rnti = m_rnti;
   params.lcid = m_lcid;
+  params.srcL2Id = m_srcL2Id;
+  params.dstL2Id = m_dstL2Id;
   params.layer = layer;
   params.harqProcessId = harqId;
   params.componentCarrierId = componentCarrierId;
@@ -208,6 +211,8 @@ LteRlcTm::DoReportBufferStatus (void)
   LteMacSapProvider::ReportBufferStatusParameters r;
   r.rnti = m_rnti;
   r.lcid = m_lcid;
+  r.srcL2Id = m_srcL2Id;
+  r.dstL2Id = m_dstL2Id;
   r.txQueueSize = queueSize;
   r.txQueueHolDelay = holDelay.GetMilliSeconds () ;
   r.retxQueueSize = 0;

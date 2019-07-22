@@ -16,6 +16,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <mmiozzo@cttc.es>
+ * Modified by: NIST
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 
@@ -70,7 +73,7 @@ public:
 * This is the PHY SAP User, i.e., the part of the SAP that contains the MAC
 * methods called by the PHY
 */
-class LteUePhySapUser
+class LteUePhySapUser 
 {
 public:
   virtual ~LteUePhySapUser ();
@@ -96,8 +99,24 @@ public:
   */
   virtual void ReceiveLteControlMessage (Ptr<LteControlMessage> msg) = 0;
 
-};
+  /**
+  * Notify the MAC that the PHY changed of timing as consequence of a change of SyncRef
+  * Adjust the MAC subframe indication
+  * \param frameNo the current PHY frame number
+  * \param subframeNo the current PHY subframe number
+  */
+  virtual void NotifyChangeOfTiming (uint32_t frameNo, uint32_t subframeNo) = 0;
 
+  /**
+   * Pass the sensing information from PHY to MAC
+   * \param frameNo the current PHY frame number
+   * \param subframeNo the current PHY subframe number
+   * \param rbstart the start resource block 
+   * \param rbLen the length of transmitted data
+   * \param rsrpVal the measured RSRP value over the used resource blocks
+   */
+  virtual void PassSensingData (uint32_t frameNo, uint32_t subframeNo, uint16_t pRsvp, uint8_t rbStart, uint8_t rbLen, uint8_t prio, double slRsrp, double slRssi) = 0;
+};
 
 
 } // namespace ns3

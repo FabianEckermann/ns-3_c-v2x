@@ -17,6 +17,9 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #ifndef LTE_CONTROL_MESSAGES_H
@@ -55,12 +58,16 @@ public:
   {
     DL_DCI, UL_DCI, // Downlink/Uplink Data Control Indicator
     DL_CQI, UL_CQI, // Downlink/Uplink Channel Quality Indicator
-    BSR, // Buffer Status Report
+    BSR, // Buffer Status Report, including sidelink bsr
     DL_HARQ, // UL HARQ feedback
     RACH_PREAMBLE, // Random Access Preamble
     RAR, // Random Access Response
     MIB, // Master Information Block
     SIB1, // System Information Block Type 1
+    SL_DCI, SCI, //Sidelink Data Control Indicator (DCI-5) and Sidelink Control Information (SCI-0)
+    SL_DCI_V2X, SCI_V2X, // Sidelink Data Control Indicator (DCI-5A) and Sidelink Control Information (SCI-1)
+    MIB_SL, // Master Information Block Sidelink
+    SL_DISC_MSG // sidelink dicovery message
   };
 
   LteControlMessage (void);
@@ -139,6 +146,65 @@ public:
 
 private:
   UlDciListElement_s m_dci; ///< DCI
+};
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * The Sidelink Data Control Indicator messages defines the RB allocation for the
+ * users in the sidelink
+ */
+class SlDciLteControlMessage : public LteControlMessage
+{
+public:
+  SlDciLteControlMessage (void);
+  virtual ~SlDciLteControlMessage (void);
+
+  /**
+  * \brief add a DCI into the message
+  * \param dci the dci
+  */
+  void SetDci (SlDciListElement_s dci);
+
+  /**
+  * \brief Get dic informations
+  * \return dci messages
+  */
+  SlDciListElement_s GetDci (void);
+
+private:
+  SlDciListElement_s m_dci;
+};
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * The Sidelink Data Control Indicator messages defines the RB allocation for the
+ * users in the sidelink
+ */
+class SlDciLteControlMessageV2x : public LteControlMessage
+{
+public:
+  SlDciLteControlMessageV2x (void);
+  virtual ~SlDciLteControlMessageV2x (void);
+
+
+  /**
+  * \brief add a DCIV2x into the message
+  * \param dci the dci
+  */
+  void SetDci (SlDciListElementV2x dci);
+
+  /**
+  * \brief Get dciV2X informations
+  * \return dciV2X messages
+  */
+  SlDciListElementV2x GetDci (void);
+
+private:
+  SlDciListElementV2x m_dci; 
 };
 
 
@@ -402,6 +468,121 @@ private:
 
 }; // end of class Sib1LteControlMessage
 
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * The Sidelink Control Indicator messages defines the RB allocation for the
+ * users in the sidelink shared channel
+ */
+class SciLteControlMessage : public LteControlMessage
+{
+public:
+  SciLteControlMessage (void);
+
+  /**
+  * \brief add a SCI into the message
+  * \param sci the sci
+  */
+  void SetSci (SciListElement_s sci);
+
+  /**
+  * \brief Get sci informations
+  * \return sci messages
+  */
+  SciListElement_s GetSci (void);
+
+private:
+  SciListElement_s m_sci;
+};
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * The Sidelink Control Indicator messages defines the RB allocation for the
+ * users in the sidelink shared channel
+ */
+class SciLteControlMessageV2x : public LteControlMessage
+{
+public:
+  SciLteControlMessageV2x (void);
+
+  /**
+  * \brief add a SCIV2x into the message
+  * \param sci the sci
+  */
+  void SetSci (SciListElementV2x sci);
+
+
+  /**
+  * \brief Get sci informations
+  * \return sci messages
+  */
+  SciListElementV2x GetSci (void);
+
+private:
+  SciListElementV2x m_sci;
+};
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * Abstract model for broadcasting the Master Information Block Sidelink (MIB-SL)
+ * MIB-SL is transmitted by sidelink-enabled UEs (when required) every 40 milliseconds.
+ * */
+class MibSLLteControlMessage : public LteControlMessage
+{
+public:
+  MibSLLteControlMessage (void);
+
+  /**
+  * \brief add a MIB-SL into the message
+  * \param mibSL the MIB-SL
+  */
+  void SetMibSL (LteRrcSap::MasterInformationBlockSL mibSL);
+
+  /**
+  * \brief Get MIB-SL informations
+  * \return mibSL messages
+  */
+  LteRrcSap::MasterInformationBlockSL GetMibSL (void);
+
+private:
+  LteRrcSap::MasterInformationBlockSL m_mibSL;
+};
+
+
+// ---------------------------------------------------------------------------
+
+/**
+ * \ingroup lte
+ * the discovery message 
+ *
+ */ 
+class SlDiscMessage: public LteControlMessage
+{
+public:
+  SlDiscMessage (void);
+
+  /**
+   * \brief set discovery message
+   * \param discMsg discovery message
+   */
+  void SetSlDiscMessage (SlDiscMsg discMsg);
+
+  /**
+   * \brief get discovery message
+   * \return discovery message
+   */
+  SlDiscMsg GetSlDiscMessage (void);
+
+private:
+SlDiscMsg m_discMsg;
+
+};
 
 } // namespace ns3
 

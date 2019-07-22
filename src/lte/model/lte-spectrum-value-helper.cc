@@ -17,6 +17,7 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  *         Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include <map>
@@ -92,7 +93,8 @@ static const struct EutraChannelNumbers
   { 37, 1910, 37550, 37550, 37749, 1910, 37550, 37550, 37749},
   { 38, 2570, 37750, 37750, 38249, 2570, 37750, 37750, 38249},
   { 39, 1880, 38250, 38250, 38649, 1880, 38250, 38250, 38649},
-  { 40, 2300, 38650, 38650, 39649, 2300, 38650, 38650, 39649}
+  { 40, 2300, 38650, 38650, 39649, 2300, 38650, 38650, 39649},
+  { 47, 5855, 54540, 54549, 55239, 5855, 54540, 54540, 55239} // V2X TDD band
 }; ///< eutra channel numbers
 
 /// number of EUTRA bands
@@ -332,6 +334,30 @@ LteSpectrumValueHelper::CreateTxPowerSpectralDensity (uint32_t earfcn, uint8_t t
   return txPsd;
 }
 
+
+Ptr<SpectrumValue> 
+LteSpectrumValueHelper::CreateUlTxPowerSpectralDensity (uint16_t earfcn, uint8_t txBandwidthConfiguration, double powerTx, std::vector <int> activeRbs)
+{
+  NS_LOG_FUNCTION (earfcn << (uint16_t) txBandwidthConfiguration << powerTx << activeRbs);
+
+  Ptr<SpectrumModel> model = GetSpectrumModel (earfcn, txBandwidthConfiguration);
+  Ptr<SpectrumValue> txPsd = Create <SpectrumValue> (model);
+
+  // powerTx is expressed in dBm. We must convert it into natural unit.
+  double powerTxW = std::pow (10., (powerTx - 30) / 10);
+
+  double txPowerDensity = (powerTxW / (activeRbs.size() * 180000));
+
+  for (std::vector <int>::iterator it = activeRbs.begin (); it != activeRbs.end (); it++)
+    {
+      int rbId = (*it);
+      (*txPsd)[rbId] = txPowerDensity;
+    }
+
+  NS_LOG_LOGIC (*txPsd);
+
+  return txPsd;
+}
 
 
 Ptr<SpectrumValue>

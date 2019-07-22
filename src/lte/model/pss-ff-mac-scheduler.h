@@ -16,7 +16,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
- * Modification: Dizhi Zhou <dizhi.zhou@gmail.com>    // modify codes related to downlink scheduler
+ * Modified by: 
+ *          Dizhi Zhou <dizhi.zhou@gmail.com>    // modify codes related to downlink scheduler
+ *          NIST (D2D)
  */
 
 #ifndef PSS_FF_MAC_SCHEDULER_H

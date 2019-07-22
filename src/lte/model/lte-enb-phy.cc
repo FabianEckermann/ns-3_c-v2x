@@ -17,6 +17,7 @@
  *
  * Author: Giuseppe Piro  <g.piro@poliba.it>
  *         Marco Miozzo <mmiozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include <ns3/object-factory.h>
@@ -152,7 +153,7 @@ LteEnbPhy::LteEnbPhy ()
   NS_FATAL_ERROR ("This constructor should not be called");
 }
 
-LteEnbPhy::LteEnbPhy (Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy)
+LteEnbPhy::LteEnbPhy (Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy, bool EnbEnablePhyLayer)
   : LtePhy (dlPhy, ulPhy),
     m_enbPhySapUser (0),
     m_enbCphySapUser (0),
@@ -168,6 +169,15 @@ LteEnbPhy::LteEnbPhy (Ptr<LteSpectrumPhy> dlPhy, Ptr<LteSpectrumPhy> ulPhy)
   m_harqPhyModule = Create <LteHarqPhy> ();
   m_downlinkSpectrumPhy->SetHarqPhyModule (m_harqPhyModule);
   m_uplinkSpectrumPhy->SetHarqPhyModule (m_harqPhyModule);
+
+  if (EnbEnablePhyLayer)
+  {
+    Simulator::ScheduleNow (&LteEnbPhy::StartFrame, this);
+  }
+  else
+  {
+    NS_LOG_INFO ("Created eNB disabled!");
+  }
 }
 
 TypeId
@@ -581,6 +591,16 @@ LteEnbPhy::ReceiveLteControlMessageList (std::list<Ptr<LteControlMessage> > msgL
               {
                 m_enbPhySapUser->ReceiveLteControlMessage (*it);
               }
+          }
+          break;
+        case LteControlMessage::SCI:
+          {
+            NS_LOG_INFO ("eNodeB receiving SL_DCI...ignore");
+          }
+          break;
+        case LteControlMessage::MIB_SL:
+          {
+            NS_LOG_INFO ("eNodeB receiving MIB_SL...ignore");
           }
           break;
         default:

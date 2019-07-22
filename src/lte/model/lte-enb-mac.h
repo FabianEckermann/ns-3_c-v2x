@@ -20,6 +20,7 @@
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *          NIST (D2D)
  */
 
 #ifndef LTE_ENB_MAC_H
@@ -250,6 +251,17 @@ private:
   * \param params LteEnbCmacSapProvider::UeConfig
   */
   void DoUeUpdateConfigurationReq (LteEnbCmacSapProvider::UeConfig params);
+  /**
+   * \brief add pool function
+   * \param group group
+   * \param pool Ptr<SidelinkCommResourcePool>
+   */
+  void DoAddPool (uint32_t group, Ptr<SidelinkCommResourcePool> pool);
+  /**
+   * \brief remove pool function
+   * \param group group
+   */
+  void DoRemovePool (uint32_t group);
   /**
   * \brief Get RACH configuration function
   * \returns LteEnbCmacSapProvider::RachConfig

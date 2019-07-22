@@ -18,6 +18,7 @@
  * Author: Jaume Nin <jnin@cttc.es>
  * modified by: Marco Miozzo <mmiozzo@cttc.es>
  *        Convert MacStatsCalculator in PhyTxStatsCalculator
+ * Modified by: NIST
  */
 
 #include "phy-tx-stats-calculator.h"
@@ -33,7 +34,8 @@ NS_OBJECT_ENSURE_REGISTERED (PhyTxStatsCalculator);
 
 PhyTxStatsCalculator::PhyTxStatsCalculator ()
   : m_dlTxFirstWrite (true),
-    m_ulTxFirstWrite (true)
+    m_ulTxFirstWrite (true),
+    m_slTxFirstWrite (true)
 {
   NS_LOG_FUNCTION (this);
 
@@ -61,6 +63,11 @@ PhyTxStatsCalculator::GetTypeId (void)
                    StringValue ("UlTxPhyStats.txt"),
                    MakeStringAccessor (&PhyTxStatsCalculator::SetUlTxOutputFilename),
                    MakeStringChecker ())
+    .AddAttribute ("SlTxOutputFilename",
+                   "Name of the file where the sidelink results will be saved.",
+                   StringValue ("SlTxPhyStats.txt"),
+                   MakeStringAccessor (&PhyTxStatsCalculator::SetSlTxOutputFilename),
+                   MakeStringChecker ())
   ;
   return tid;
 }
@@ -87,6 +94,18 @@ std::string
 PhyTxStatsCalculator::GetDlTxOutputFilename (void)
 {
   return LteStatsCalculator::GetDlOutputFilename ();
+}
+
+void
+PhyTxStatsCalculator::SetSlTxOutputFilename (std::string outputFilename)
+{
+  LteStatsCalculator::SetSlOutputFilename (outputFilename);
+}
+
+std::string
+PhyTxStatsCalculator::GetSlTxOutputFilename (void)
+{
+  return LteStatsCalculator::GetSlOutputFilename ();
 }
 
 void
@@ -180,6 +199,50 @@ PhyTxStatsCalculator::UlPhyTransmission (PhyTransmissionStatParameters params)
 }
 
 void
+PhyTxStatsCalculator::SlPhyTransmission (PhyTransmissionStatParameters params)
+{
+  NS_LOG_FUNCTION (this << params.m_cellId << params.m_imsi << params.m_timestamp << params.m_rnti << params.m_layer << params.m_mcs << params.m_size << params.m_rv << params.m_ndi);
+  NS_LOG_INFO ("Write SL Tx Phy Stats in " << GetSlTxOutputFilename ().c_str ());
+
+  std::ofstream outFile;
+  if ( m_slTxFirstWrite == true )
+    {
+      outFile.open (GetSlTxOutputFilename ().c_str ());
+      if (!outFile.is_open ())
+        {
+          NS_LOG_ERROR ("Can't open file " << GetSlTxOutputFilename ().c_str ());
+          return;
+        }
+      m_slTxFirstWrite = false;
+//       outFile << "% time\tcellId\tIMSI\tRNTI\ttxMode\tlayer\tmcs\tsize\trv\tndi";
+      outFile << "% time\tcellId\tIMSI\tRNTI\tlayer\tmcs\tsize\trv\tndi";
+      outFile << std::endl;
+    }
+  else
+    {
+      outFile.open (GetSlTxOutputFilename ().c_str (),  std::ios_base::app);
+      if (!outFile.is_open ())
+        {
+          NS_LOG_ERROR ("Can't open file " << GetSlTxOutputFilename ().c_str ());
+          return;
+        }
+    }
+
+//   outFile << Simulator::Now ().GetNanoSeconds () / (double) 1e9 << "\t";
+  outFile << params.m_timestamp << "\t";
+  outFile << (uint32_t) params.m_cellId << "\t";
+  outFile << params.m_imsi << "\t";
+  outFile << params.m_rnti << "\t";
+  //outFile << (uint32_t) params.m_txMode << "\t";
+  outFile << (uint32_t) params.m_layer << "\t";
+  outFile << (uint32_t) params.m_mcs << "\t";
+  outFile << params.m_size << "\t";
+  outFile << (uint32_t) params.m_rv << "\t";
+  outFile << (uint32_t) params.m_ndi << std::endl;
+  outFile.close ();
+}
+
+void
 PhyTxStatsCalculator::DlPhyTransmissionCallback (Ptr<PhyTxStatsCalculator> phyTxStats,
                       std::string path, PhyTransmissionStatParameters params)
 {
@@ -225,6 +288,27 @@ PhyTxStatsCalculator::UlPhyTransmissionCallback (Ptr<PhyTxStatsCalculator> phyTx
   phyTxStats->UlPhyTransmission (params);
 }
 
+void
+PhyTxStatsCalculator::SlPhyTransmissionCallback (Ptr<PhyTxStatsCalculator> phyTxStats,
+                      std::string path, PhyTransmissionStatParameters params)
+{
+  NS_LOG_FUNCTION (phyTxStats << path);
+  uint64_t imsi = 0;
+  std::ostringstream pathAndRnti;
+  pathAndRnti << path << "/" << params.m_rnti;
+  if (phyTxStats->ExistsImsiPath (pathAndRnti.str ()) == true)
+    {
+      imsi = phyTxStats->GetImsiPath (pathAndRnti.str ());
+    }
+  else
+    {
+      imsi = FindImsiForUe (path, params.m_rnti);
+      phyTxStats->SetImsiPath (pathAndRnti.str (), imsi);
+    }
+
+  params.m_imsi = imsi;
+  phyTxStats->UlPhyTransmission (params);
+}
 
 } // namespace ns3
 

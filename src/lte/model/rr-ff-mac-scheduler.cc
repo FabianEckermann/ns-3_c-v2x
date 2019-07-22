@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #include <ns3/log.h>
@@ -31,6 +32,7 @@
 #include <ns3/lte-common.h>
 #include <ns3/lte-vendor-specific-parameters.h>
 #include <ns3/boolean.h>
+#include <algorithm>
 
 namespace ns3 {
 
@@ -200,23 +202,74 @@ RrFfMacScheduler::DoCschedUeConfigReq (const struct FfMacCschedSapProvider::Csch
 void
 RrFfMacScheduler::DoCschedLcConfigReq (const struct FfMacCschedSapProvider::CschedLcConfigReqParameters& params)
 {
-  NS_LOG_FUNCTION (this);
+  // NS_LOG_FUNCTION (this);
   // Not used at this stage (LCs updated by DoSchedDlRlcBufferReq)
-  return;
+  // return;
+  NS_LOG_FUNCTION (this << " New LC, rnti: "  << params.m_rnti);
+  NS_LOG_FUNCTION ("LC configuration. Number of LCs:"<<params.m_logicalChannelConfigList.size ());
+
+  // m_reconfigureFlat indicates if this is a reconfiguration or new UE is added, table  4.1.5 in LTE MAC scheduler specification
+  if (params.m_reconfigureFlag)
+    {
+      std::vector <struct LogicalChannelConfigListElement_s>::const_iterator lcit;
+
+      for(lcit = params.m_logicalChannelConfigList.begin (); lcit!= params.m_logicalChannelConfigList.end (); lcit++)
+        {
+          LteFlowId_t flowid = LteFlowId_t (params.m_rnti,lcit->m_logicalChannelIdentity);
+
+          if (m_ueLogicalChannelsConfigList.find (flowid) == m_ueLogicalChannelsConfigList.end ())
+            {
+              NS_LOG_ERROR ("UE logical channels can not be reconfigured because it was not configured before.");
+            }
+          else
+            {
+              m_ueLogicalChannelsConfigList.find (flowid)->second = *lcit;
+            }
+        }
+    }    // else new UE is added
+  else
+    {
+      std::vector <struct LogicalChannelConfigListElement_s>::const_iterator lcit;
+
+      for (lcit = params.m_logicalChannelConfigList.begin (); lcit != params.m_logicalChannelConfigList.end (); lcit++)
+        {
+          LteFlowId_t flowId = LteFlowId_t (params.m_rnti,lcit->m_logicalChannelIdentity);
+          m_ueLogicalChannelsConfigList.insert (std::pair<LteFlowId_t, LogicalChannelConfigListElement_s>(flowId,*lcit));
+        }
+    }
 }
 
 void
 RrFfMacScheduler::DoCschedLcReleaseReq (const struct FfMacCschedSapProvider::CschedLcReleaseReqParameters& params)
 {
   NS_LOG_FUNCTION (this);
-    for (uint16_t i = 0; i < params.m_logicalChannelIdentity.size (); i++)
+  std::vector <uint8_t>::const_iterator it;
+
+  for (it = params.m_logicalChannelIdentity.begin (); it != params.m_logicalChannelIdentity.end (); it++)
     {
-     std::list<FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it = m_rlcBufferReq.begin ();
+      LteFlowId_t flowId = LteFlowId_t (params.m_rnti, *it);
+
+      // find the logical channel with the same Logical Channel Identity in the current list, release it
+      if (m_ueLogicalChannelsConfigList.find (flowId)!= m_ueLogicalChannelsConfigList.end ())
+        {
+          m_ueLogicalChannelsConfigList.erase (flowId);
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Logical channels cannot be released because it can not be found in the list of active LCs");
+        }
+    }
+  for (uint16_t i = 0; i < params.m_logicalChannelIdentity.size (); i++)
+    {
+      std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it = m_rlcBufferReq.begin ();
+      std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator temp;
       while (it!=m_rlcBufferReq.end ())
         {
-          if (((*it).m_rnti == params.m_rnti)&&((*it).m_logicalChannelIdentity == params.m_logicalChannelIdentity.at (i)))
+          if (((*it).first.m_rnti == params.m_rnti) && ((*it).first.m_lcId == params.m_logicalChannelIdentity.at (i)))
             {
-              it = m_rlcBufferReq.erase (it);
+              temp = it;
+              it++;
+              m_rlcBufferReq.erase (temp);
             }
           else
             {
@@ -232,6 +285,16 @@ RrFfMacScheduler::DoCschedUeReleaseReq (const struct FfMacCschedSapProvider::Csc
 {
   NS_LOG_FUNCTION (this << " Release RNTI " << params.m_rnti);
   
+  for (int i=0; i < MAX_LC_LIST; i++)
+    {
+      LteFlowId_t flowId = LteFlowId_t (params.m_rnti,i);
+      // find the logical channel with the same Logical Channel Identity in the current list, release it
+      if (m_ueLogicalChannelsConfigList.find (flowId)!= m_ueLogicalChannelsConfigList.end ())
+        {
+          m_ueLogicalChannelsConfigList.erase (flowId);
+        }
+    }
+
   m_uesTxMode.erase (params.m_rnti);
   m_dlHarqCurrentProcessId.erase (params.m_rnti);
   m_dlHarqProcessesStatus.erase  (params.m_rnti);
@@ -242,13 +305,15 @@ RrFfMacScheduler::DoCschedUeReleaseReq (const struct FfMacCschedSapProvider::Csc
   m_ulHarqProcessesStatus.erase  (params.m_rnti);
   m_ulHarqProcessesDciBuffer.erase  (params.m_rnti);
   m_ceBsrRxed.erase (params.m_rnti);
-  std::list<FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it = m_rlcBufferReq.begin ();
+  std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it = m_rlcBufferReq.begin ();
+  std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator temp;
   while (it != m_rlcBufferReq.end ())
     {
-      if ((*it).m_rnti == params.m_rnti)
+      if ((*it).first.m_rnti == params.m_rnti)
         {
-          NS_LOG_INFO (this << " Erase RNTI " << (*it).m_rnti << " LC " << (uint16_t)(*it).m_logicalChannelIdentity);
-          it = m_rlcBufferReq.erase (it);
+          temp = it;
+          it++;
+          m_rlcBufferReq.erase (temp);
         }
       else
         {
@@ -274,32 +339,29 @@ RrFfMacScheduler::DoSchedDlRlcBufferReq (const struct FfMacSchedSapProvider::Sch
 {
   NS_LOG_FUNCTION (this << params.m_rnti << (uint32_t) params.m_logicalChannelIdentity);
   // API generated by RLC for updating RLC parameters on a LC (tx and retx queues)
-  std::list<FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it = m_rlcBufferReq.begin ();
-  bool newLc = true;
-  while (it != m_rlcBufferReq.end ())
+  std::map <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it;
+
+  LteFlowId_t flow (params.m_rnti, params.m_logicalChannelIdentity);
+
+  it =  m_rlcBufferReq.find (flow);
+
+  if (it == m_rlcBufferReq.end ())
     {
-      // remove old entries of this UE-LC
-      if (((*it).m_rnti == params.m_rnti)&&((*it).m_logicalChannelIdentity == params.m_logicalChannelIdentity))
-        {
-          it = m_rlcBufferReq.erase (it);
-          newLc = false;
-        }
-      else
-        {
-          ++it;
-        }
-    }
-  // add the new parameters
-  m_rlcBufferReq.insert (it, params);
-  NS_LOG_INFO (this << " RNTI " << params.m_rnti << " LC " << (uint16_t)params.m_logicalChannelIdentity << " RLC tx size " << params.m_rlcTransmissionQueueHolDelay << " RLC retx size " << params.m_rlcRetransmissionQueueSize << " RLC stat size " <<  params.m_rlcStatusPduSize);
-  // initialize statistics of the flow in case of new flows
-  if (newLc == true)
-    {
-      m_p10CqiRxed.insert ( std::pair<uint16_t, uint8_t > (params.m_rnti, 1)); // only codeword 0 at this stage (SISO)
+      m_rlcBufferReq.insert (std::pair <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters> (flow, params));
+
+      //m_p10CqiRxed.insert ( std::pair<uint16_t, uint8_t > (params.m_rnti, 1)); // only codeword 0 at this stage (SISO)
       // initialized to 1 (i.e., the lowest value for transmitting a signal)
-      m_p10CqiTimers.insert ( std::pair<uint16_t, uint32_t > (params.m_rnti, m_cqiTimersThreshold));
+      //m_p10CqiTimers.insert ( std::pair<uint16_t, uint32_t > (params.m_rnti, m_cqiTimersThreshold));
+    }
+  else
+    {
+      (*it).second = params;
     }
 
+  return;
+
+  NS_LOG_INFO (this << " RNTI " << params.m_rnti << " LC " << (uint16_t)params.m_logicalChannelIdentity << " RLC tx size " << params.m_rlcTransmissionQueueHolDelay << " RLC retx size " << params.m_rlcRetransmissionQueueSize << " RLC stat size " <<  params.m_rlcStatusPduSize);
+  
   return;
 }
 
@@ -339,6 +401,26 @@ RrFfMacScheduler::SortRlcBufferReq (FfMacSchedSapProvider::SchedDlRlcBufferReqPa
   return (i.m_rnti < j.m_rnti);
 }
 
+int
+RrFfMacScheduler::LcActivePerFlow (uint16_t rnti)
+{
+  std::map <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it;
+  int lcActive = 0;
+  for (it = m_rlcBufferReq.begin (); it != m_rlcBufferReq.end (); it++)
+    {
+      if (((*it).first.m_rnti == rnti) && (((*it).second.m_rlcTransmissionQueueSize > 0)
+                                           || ((*it).second.m_rlcRetransmissionQueueSize > 0)
+                                           || ((*it).second.m_rlcStatusPduSize > 0) ))
+        {
+          lcActive++;
+        }
+      if ((*it).first.m_rnti > rnti)
+        {
+          break;
+        }
+    }
+  return (lcActive);
+}
 
 uint8_t
 RrFfMacScheduler::HarqProcessAvailability (uint16_t rnti)
@@ -436,6 +518,16 @@ RrFfMacScheduler::RefreshHarqProcesses ()
                 }
               (*itStat).second.at (i) = 0;
               (*itTimers).second.at (i) = 0;
+              //Bug 737: clear associated metadata
+              std::map <uint16_t, DlHarqRlcPduListBuffer_t>::iterator itRlcPdu =  m_dlHarqProcessesRlcPduListBuffer.find ((*itTimers).first);
+              if (itRlcPdu == m_dlHarqProcessesRlcPduListBuffer.end ())
+                {
+                  NS_FATAL_ERROR ("Unable to find RlcPdcList in HARQ buffer for RNTI " << (*itTimers).first);
+                }
+              for (uint16_t k = 0; k < (*itRlcPdu).second.size (); k++)
+                {
+                  (*itRlcPdu).second.at (k).at (i).clear ();
+                }
             }
           else
             {
@@ -451,6 +543,8 @@ RrFfMacScheduler::RefreshHarqProcesses ()
 void
 RrFfMacScheduler::DoSchedDlTriggerReq (const struct FfMacSchedSapProvider::SchedDlTriggerReqParameters& params)
 {
+  //std::cout<<" --------  ENTER RR DL SCHEDULER ---------"<<std::endl;
+  
   NS_LOG_FUNCTION (this << " DL Frame no. " << (params.m_sfnSf >> 4) << " subframe no. " << (0xF & params.m_sfnSf));
   // API generated by RLC for triggering the scheduling of a DL subframe
 
@@ -458,6 +552,10 @@ RrFfMacScheduler::DoSchedDlTriggerReq (const struct FfMacSchedSapProvider::Sched
   int rbgSize = GetRbgSize (m_cschedCellConfig.m_dlBandwidth);
   int rbgNum = m_cschedCellConfig.m_dlBandwidth / rbgSize;
   FfMacSchedSapUser::SchedDlConfigIndParameters ret;
+
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > allocationMapPerRntiPerLCId;
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itMap;
+  allocationMapPerRntiPerLCId.clear ();
 
   // Generate RBGs map
   std::vector <bool> rbgMap;
@@ -700,7 +798,7 @@ RrFfMacScheduler::DoSchedDlTriggerReq (const struct FfMacSchedSapProvider::Sched
               if (j == dciRbg.size ())
                 {
                   // find new RBGs -> update DCI map
-                  uint32_t rbgMask = 0;
+                  uint64_t rbgMask = 0;
                   for (uint16_t k = 0; k < dciRbg.size (); k++)
                     {
                       rbgMask = rbgMask + (0x1 << dciRbg.at (k));
@@ -832,144 +930,452 @@ RrFfMacScheduler::DoSchedDlTriggerReq (const struct FfMacSchedSapProvider::Sched
       return;
     }
 
-  // Get the actual active flows (queue!=0)
-  std::list<FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it;
-  m_rlcBufferReq.sort (SortRlcBufferReq);
-  int nflows = 0;
-  int nTbs = 0;
-  std::map <uint16_t,uint8_t> lcActivesPerRnti; // tracks how many active LCs per RNTI there are
-  std::map <uint16_t,uint8_t>::iterator itLcRnti;
-  for (it = m_rlcBufferReq.begin (); it != m_rlcBufferReq.end (); it++)
-    {
-      // remove old entries of this UE-LC
-      std::set <uint16_t>::iterator itRnti = rntiAllocated.find ((*it).m_rnti);
-      if ( (((*it).m_rlcTransmissionQueueSize > 0)
-            || ((*it).m_rlcRetransmissionQueueSize > 0)
-            || ((*it).m_rlcStatusPduSize > 0))
-           && (itRnti == rntiAllocated.end ())  // UE must not be allocated for HARQ retx
-           && (HarqProcessAvailability ((*it).m_rnti))  ) // UE needs HARQ proc free
+std::vector <LteFlowId_t> satisfiedFlows;      // structure to save satisfied flows 
+  double bytesTxedF = 0;                             // accumulated data for each flows             
+ 
+  std::map <LteFlowId_t,struct LogicalChannelConfigListElement_s>::iterator itLogicalChannels;
+  std::map <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itF;
 
+  std::vector <uint16_t> tempV;      // structure to save the RBGs assigned to each flow 
+
+  std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itDL= m_rlcBufferReq.begin();
+
+  
+  if ( m_nextRntiDl == 0 )
+   {
+     for ( itDL= m_rlcBufferReq.begin(); itDL != m_rlcBufferReq.end(); itDL ++ )
+      {
+        if ( (*itDL).first.m_rnti != 0 ) 
+         {
+            m_nextRntiDl = (*itDL).first.m_rnti;
+            m_nextLcidDl = (*itDL).first.m_lcId;
+         }
+      }
+   }
+
+  if ( m_nextRntiDl == 0 ) 
+   {
+     ret.m_nrOfPdcchOfdmSymbols = 1;   /// \todo check correct value according the DCIs txed
+     m_schedSapUser->SchedDlConfigInd (ret);
+     return;
+   }
+    
+  //std::cout<<" m_nextRntiDl = "<<(int)m_nextRntiDl<<" m_nextLcidDl = "<<(int)m_nextLcidDl<<std::endl;
+
+  std::map <LteFlowId_t,struct LogicalChannelConfigListElement_s>::iterator itTemp1;
+  for ( itTemp1= m_ueLogicalChannelsConfigList.begin(); itTemp1 != m_ueLogicalChannelsConfigList.end(); itTemp1 ++ )
+   { 
+      //std::cout<<" rnti = "<<(int) (*itTemp1).first.m_rnti<<" lcid = "<<(int)(*itTemp1).first.m_lcId<<std::endl;
+   }
+
+  //std::cout<<"\t display rlc buffer ; "<<std::endl;
+  std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itBuffer;
+  for ( itBuffer= m_rlcBufferReq.begin(); itBuffer != m_rlcBufferReq.end(); itBuffer ++ ) 
+   {
+      //std::cout<<"\t rnti = "<<(int)itBuffer->first.m_rnti<<" Lcid = "<<(int)itBuffer->first.m_lcId<<" data = "<<(int) (*itBuffer).second.m_rlcTransmissionQueueSize<<std::endl;
+   }
+
+  unsigned int nbHarq = 0 ;
+  for (int i = 0; i < rbgNum; i++)
+   {
+      NS_LOG_INFO (this << " ALLOCATION for RBG " << i << " of " << rbgNum);
+      //std::cout<<"\t ALLOCATION for RBG " << i << " of " << rbgNum<<std::endl;
+    
+      if (rbgMap.at (i) == false)    // this RBG is not allocated
         {
-          NS_LOG_LOGIC (this << " User " << (*it).m_rnti << " LC " << (uint16_t)(*it).m_logicalChannelIdentity << " is active, status  " << (*it).m_rlcStatusPduSize << " retx " << (*it).m_rlcRetransmissionQueueSize << " tx " << (*it).m_rlcTransmissionQueueSize);
-          std::map <uint16_t,uint8_t>::iterator itCqi = m_p10CqiRxed.find ((*it).m_rnti);
-          uint8_t cqi = 0;
-          if (itCqi != m_p10CqiRxed.end ())
+          std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itLogicalChannels;
+          std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itMax = m_rlcBufferReq.end ();
+          
+          LteFlowId_t m_next_flow = LteFlowId_t (m_nextRntiDl, m_nextLcidDl);
+          itLogicalChannels = m_rlcBufferReq.find (m_next_flow);
+          if ( itLogicalChannels == m_rlcBufferReq.end()) 
+            itLogicalChannels = m_rlcBufferReq.begin();
+
+          unsigned int nbLoop = 0 ;
+
+          do 
             {
-              cqi = (*itCqi).second;
-            }
-          else
-            {
-              cqi = 1; // lowest value for trying a transmission
-            }
-          if (cqi != 0)
-            {
-              // CQI == 0 means "out of range" (see table 7.2.3-1 of 36.213)
-              nflows++;
-              itLcRnti = lcActivesPerRnti.find ((*it).m_rnti);
-              if (itLcRnti != lcActivesPerRnti.end ())
+              nbLoop ++;
+
+              std::set <uint16_t>::iterator itRnti = rntiAllocated.find (itLogicalChannels->first.m_rnti);
+              if ((itRnti != rntiAllocated.end ())||(!HarqProcessAvailability (itLogicalChannels->first.m_rnti)))
+               {
+                 // UE already allocated for HARQ or without HARQ process available -> drop it
+                 if (itRnti != rntiAllocated.end ())
+                 {
+                   NS_LOG_DEBUG (this << " RNTI discared for HARQ tx" << (uint16_t)(itLogicalChannels->first.m_rnti));
+                 }
+                 if (!HarqProcessAvailability (itLogicalChannels->first.m_rnti))
+                 {
+                   NS_LOG_DEBUG (this << " RNTI discared for HARQ id" << (uint16_t)(itLogicalChannels->first.m_rnti));
+                 }
+             
+                 nbHarq ++;
+                 itLogicalChannels ++;
+                 if ( itLogicalChannels == m_rlcBufferReq.end ()) 
+                     itLogicalChannels = m_rlcBufferReq.begin ();  
+
+                 m_nextRntiDl = itLogicalChannels->first.m_rnti;
+                 m_nextLcidDl = itLogicalChannels->first.m_lcId;
+                 m_next_flow = LteFlowId_t (m_nextRntiDl, m_nextLcidDl);
+                 continue;
+               }
+   
+              LteFlowId_t flowId1 ;
+              flowId1.m_rnti= itLogicalChannels->first.m_rnti;
+              flowId1.m_lcId= itLogicalChannels->first.m_lcId;
+              std::vector <LteFlowId_t>::iterator Ft;
+              bool findF=false;
+              //trying to find the current flow in the satisfied flows 
+              for(Ft=satisfiedFlows.begin();Ft!=satisfiedFlows.end();Ft++)
                 {
-                  (*itLcRnti).second++;
+                  if(((*Ft).m_rnti==flowId1.m_rnti) && ((*Ft).m_lcId==flowId1.m_lcId))
+                    {
+                     findF=true;
+                     break;
+                    }
                 }
-              else
-                {
-                  lcActivesPerRnti.insert (std::pair<uint16_t, uint8_t > ((*it).m_rnti, 1));
-                  nTbs++;
-                }
+              if (findF==false) // this flow doesn't exist in the satisfied flows --> needs more RBGs to transmit its data  
+               {
+                 std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itQ;
+                 LteFlowId_t flowId = LteFlowId_t (itLogicalChannels->first.m_rnti, itLogicalChannels->second.m_logicalChannelIdentity);
+                 itQ = m_rlcBufferReq.find(flowId);
+                 if (itQ!=m_rlcBufferReq.end())
+                  {
+                    if (((*itQ).second.m_rlcTransmissionQueueSize > 0))
+                      {          
+                         itMax = itLogicalChannels;
+                      }
+                     else 
+                      {
+                         itLogicalChannels ++;
+                         if ( itLogicalChannels == m_rlcBufferReq.end ()) 
+                            itLogicalChannels = m_rlcBufferReq.begin (); 
 
-            }
-        }
-    }
+                         m_nextRntiDl = itLogicalChannels->first.m_rnti;
+                         m_nextLcidDl = itLogicalChannels->first.m_lcId;  
+                         m_next_flow = LteFlowId_t (m_nextRntiDl, m_nextLcidDl);   // added ! 
+                         continue;
+                      }
 
-  if (nflows == 0)
-    {
-      if ((ret.m_buildDataList.size () > 0) || (ret.m_buildRarList.size () > 0))
-        {
-          m_schedSapUser->SchedDlConfigInd (ret);
-        }
-      return;
-    }
-  // Divide the resource equally among the active users according to
-  // Resource allocation type 0 (see sec 7.1.6.1 of 36.213)
+                  }  //end if itQ!=m_rlcBufferReq.end()
+               }  //end findF==false
+ 
+            itLogicalChannels ++;
+            if ( itLogicalChannels == m_rlcBufferReq.end ()) 
+               itLogicalChannels = m_rlcBufferReq.begin ();   
+            
+            } //end for itLogicalchannels
+          while ( (itLogicalChannels->first.m_rnti ==  m_next_flow.m_rnti) && ( itLogicalChannels->first.m_lcId == m_next_flow.m_lcId) && (nbHarq < m_rlcBufferReq.size()) && (nbLoop <=  m_rlcBufferReq.size()) );
 
-  int rbgPerTb = (nTbs > 0) ? ((rbgNum - rbgAllocatedNum) / nTbs) : INT_MAX;
-  NS_LOG_INFO (this << " Flows to be transmitted " << nflows << " rbgPerTb " << rbgPerTb);
-  if (rbgPerTb == 0)
-    {
-      rbgPerTb = 1;                // at least 1 rbg per TB (till available resource)
-    }
-  int rbgAllocated = 0;
 
-  // round robin assignment to all UEs registered starting from the subsequent of the one
-  // served last scheduling trigger event
-  if (m_nextRntiDl != 0)
-    {
-      NS_LOG_DEBUG ("Start from the successive of " << (uint16_t) m_nextRntiDl);
-      for (it = m_rlcBufferReq.begin (); it != m_rlcBufferReq.end (); it++)
-        {
-          if ((*it).m_rnti == m_nextRntiDl)
+          if (itMax == m_rlcBufferReq.end ())
             {
-              // select the next RNTI to starting
-              it++;
-              if (it == m_rlcBufferReq.end ())
-              {
-                it = m_rlcBufferReq.begin ();
+              // no UE available for this RB
+              NS_LOG_INFO (this << " any UE found");
+            }
+           else
+            {
+                //std::cout<<" it max , rnti = "<<(int) itMax->first.m_rnti<<" lcid = "<<(int)itMax->first.m_lcId<<std::endl;
+                std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itMap;
+                itMap = allocationMapPerRntiPerLCId.find ((uint16_t)(itMax->first.m_rnti));
+                if (itMap == allocationMapPerRntiPerLCId.end ())
+                  {
+                    // insert new element
+                    std::map<uint8_t, std::vector <uint16_t> > tempMap;
+                    
+                    tempV.push_back(i);
+                    tempMap.insert (std::pair<uint8_t, std::vector <uint16_t> > (itMax->first.m_lcId, tempV));
+                    allocationMapPerRntiPerLCId.insert (std::pair <uint16_t, std::map<uint8_t, std::vector <uint16_t> > > (itMax->first.m_rnti, tempMap));
+                    rbgMap.at (i) = true;
+                   
+                    tempV.clear();
+
+                     /*********      testing if the flow is satisfied from the first RBG allocated :  *****************************/
+                    std::map <uint16_t,uint8_t>::iterator itTxMode;
+                    itTxMode = m_uesTxMode.find (itMax->first.m_rnti);
+                    if (itTxMode == m_uesTxMode.end ())
+                     {
+                       NS_FATAL_ERROR ("No Transmission Mode info on user " << itMax->first.m_rnti);
+                     }
+                    int nLayer = TransmissionModesLayers::TxMode2LayerNum ((*itTxMode).second);  // nbr of layers for MIMO transmissions
+                       
+                    int b=1;
+                    int mcsF=0;
+                    std::map <uint16_t,uint8_t>::iterator itCqi = m_p10CqiRxed.find (itMax->first.m_rnti);
+                    if (itCqi == m_p10CqiRxed.end ())
+                     {
+                       mcsF=0; // no info on this user -> lowest MCS
+                     }
+                    else
+                     {
+                       mcsF=m_amc->GetMcsFromCqi ((*itCqi).second);
+                     }
+                    bytesTxedF=(m_amc->GetDlTbSizeFromMcs (mcsF, b * rbgSize) / 8) * nLayer;   //multiply by nLayer for MIMO 
+                    std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itQF;
+                    LteFlowId_t flowIdF = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                    itQF = m_rlcBufferReq.find(flowIdF);
+                    //std::cout<<" \t first allocation rnti = "<<(int)flowIdF.m_rnti<<" lcid = "<<(int) flowIdF.m_lcId<< " mcs = "<<(int) mcsF<<" data to transmit = " <<(int)(*itQF).second.m_rlcTransmissionQueueSize <<" allocated without n = " <<(int)(m_amc->GetDlTbSizeFromMcs (mcsF, b * rbgSize) / 8)<<" allocated with n = " <<(int) bytesTxedF<<std::endl;
+                       
+                    if ((*itQF).second.m_rlcTransmissionQueueSize <= bytesTxedF )
+                     {
+                        //this flow is  satisfied with this first allocation --> add it to satisfied flows 
+                        satisfiedFlows.push_back(flowIdF);
+                        //std::cout<<"\t --> this flow is satisfied "<<std::endl;
+                        std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itLogicalChannels2;
+                        LteFlowId_t flow2 = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                                 
+                        itLogicalChannels2 = m_rlcBufferReq.find(flow2);
+                        itLogicalChannels2 ++;
+                        if ( itLogicalChannels2 == m_rlcBufferReq.end())
+                          itLogicalChannels2 = m_rlcBufferReq.begin();
+
+                        m_nextRntiDl = itLogicalChannels2->first.m_rnti;
+                        m_nextLcidDl = itLogicalChannels2->first.m_lcId;
+                     }
+                    else if ( i == (rbgNum -1))
+                     {
+                       // flow still not satisfied --> mark it as the next flow 
+                       m_nextRntiDl = itMax->first.m_rnti;
+                       m_nextLcidDl = itMax->first.m_lcId;
+                       //std::cout<<" \t update next flow : m_nextRntiDl = "<<(int)m_nextRntiDl<<" m_nextLcidDl = "<<(int)m_nextLcidDl<<std::endl;
+                     }
+                    /***********************************************************************************/
+                  }
+                else
+                  {
+                    std::map <uint8_t, std::vector <uint16_t> >::iterator itSMap;
+                    itSMap=itMap->second.find ((uint8_t)itMax->first.m_lcId);
+                    if (itSMap == itMap->second.end ())
+                     {
+                       //insert new flow id element 
+                       tempV.push_back(i);
+                       itMap->second.insert (std::pair<uint8_t, std::vector <uint16_t> > (itMax->first.m_lcId, tempV));
+                       rbgMap.at (i) = true;
+                      
+                       tempV.clear();
+
+                        /*********      testing if the flow is satisfied from the first RBG allocated :  *****************************/
+                       std::map <uint16_t,uint8_t>::iterator itTxMode;
+                       itTxMode = m_uesTxMode.find (itMax->first.m_rnti);
+                       if (itTxMode == m_uesTxMode.end ())
+                        {
+                          NS_FATAL_ERROR ("No Transmission Mode info on user " << itMax->first.m_rnti);
+                        }
+                       int nLayer = TransmissionModesLayers::TxMode2LayerNum ((*itTxMode).second);  // nbr of layers for MIMO transmissions
+                       
+                       int b=1;
+                       int mcsF=0;
+                       std::map <uint16_t,uint8_t>::iterator itCqi = m_p10CqiRxed.find (itMax->first.m_rnti);
+                       if (itCqi == m_p10CqiRxed.end ())
+                        {
+                          mcsF=0; // no info on this user -> lowest MCS
+                        }
+                       else
+                        {
+                          mcsF=m_amc->GetMcsFromCqi ((*itCqi).second);
+                        }
+                       bytesTxedF=(m_amc->GetDlTbSizeFromMcs (mcsF, b * rbgSize) / 8) * nLayer;   //multiply by nLayer for MIMO 
+                       std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itQF;
+                       LteFlowId_t flowIdF = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                       itQF = m_rlcBufferReq.find(flowIdF);
+                       //std::cout<<" \t first allocation rnti = "<<(int)flowIdF.m_rnti<<" lcid = "<<(int) flowIdF.m_lcId<< " data to transmit = " <<(int)(*itQF).second.m_rlcTransmissionQueueSize <<" allocated without n = " <<(int)(m_amc->GetDlTbSizeFromMcs (mcsF, b * rbgSize) / 8)<<" allocated with n = " <<(int) bytesTxedF<<std::endl;
+                       
+                       if ((*itQF).second.m_rlcTransmissionQueueSize <= bytesTxedF )
+                        {
+                           //this flow is  satisfied with this first allocation --> add it to satisfied flows 
+                           satisfiedFlows.push_back(flowIdF);
+                           //std::cout<<"\t --> this flow is satisfied "<<std::endl;
+
+                           std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itLogicalChannels2;
+                           LteFlowId_t flow2 = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                                 
+                           itLogicalChannels2 = m_rlcBufferReq.find(flow2);
+                           itLogicalChannels2 ++;
+                           if ( itLogicalChannels2 == m_rlcBufferReq.end())
+                              itLogicalChannels2 = m_rlcBufferReq.begin();
+
+                           m_nextRntiDl = itLogicalChannels2->first.m_rnti;
+                           m_nextLcidDl = itLogicalChannels2->first.m_lcId;
+
+                        }
+                       else if ( i == (rbgNum -1))
+                        {
+                          // flow still not satisfied --> mark it as the next flow 
+                          m_nextRntiDl = itMax->first.m_rnti;
+                          m_nextLcidDl = itMax->first.m_lcId;
+                          //std::cout<<" \t update next flow : m_nextRntiDl = "<<(int)m_nextRntiDl<<" m_nextLcidDl = "<<(int)m_nextLcidDl<<std::endl;
+                        }
+                    /***********************************************************************************/
+                     }
+                     else 
+                     {
+                       //std::cout<<" update floew "<<std::endl;
+                       int mcsF=0;
+                       std::map <uint16_t,uint8_t>::iterator itTxMode;
+                       itTxMode = m_uesTxMode.find (itMax->first.m_rnti);
+                       if (itTxMode == m_uesTxMode.end ())
+                        {
+                          NS_FATAL_ERROR ("No Transmission Mode info on user " << itMax->first.m_rnti);
+                        }
+                       int nLayer = TransmissionModesLayers::TxMode2LayerNum ((*itTxMode).second);  // nbr of layers for MIMO transmissions
+                       
+                       int b=1;
+                       b=b+(*itSMap).second.size();
+                       std::map <uint16_t,uint8_t>::iterator itCqi = m_p10CqiRxed.find (itMax->first.m_rnti);
+                       if (itCqi == m_p10CqiRxed.end ())
+                        {
+                          mcsF=0; // no info on this user -> lowest MCS
+                        }
+                       else
+                        {
+                          mcsF=m_amc->GetMcsFromCqi ((*itCqi).second);
+                        }
+                        //std::cout<<"\t mcs = "<<(int) mcsF <<std::endl;
+                        bytesTxedF=(m_amc->GetDlTbSizeFromMcs (mcsF, b * rbgSize) / 8) * nLayer;   //multiply by nLayer for MIMO 
+
+                        std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itQF;
+                        LteFlowId_t flowIdF = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                        itQF = m_rlcBufferReq.find(flowIdF);
+                        //std::cout<<" \t additional allocation rnti = "<<(int)flowIdF.m_rnti<<" lcid = "<<(int) flowIdF.m_lcId<< " data to transmit = " <<(int)(*itQF).second.m_rlcTransmissionQueueSize <<" allocated without n = " <<(int)(m_amc->GetDlTbSizeFromMcs (mcsF, b * rbgSize) / 8)<<" allocated with n = " <<(int) bytesTxedF<<std::endl;
+                       
+                        if ((*itQF).second.m_rlcTransmissionQueueSize <= bytesTxedF )
+                         {             
+                           (*itSMap).second.push_back (i);
+                           rbgMap.at (i) = true;
+               
+                           //this flow is  satisfied with this new allocation --> add it to satisfied flows 
+                           std::vector <LteFlowId_t>::iterator Ft;
+                           bool findF2=false;
+                           for(Ft=satisfiedFlows.begin();Ft!=satisfiedFlows.end();Ft++)
+                            {
+                              if(((*Ft).m_rnti==flowIdF.m_rnti) && ((*Ft).m_lcId==flowIdF.m_lcId))
+                               {
+                                 findF2=true;
+                                 break;
+                               }
+                            }
+                           if (findF2==false)
+                            {
+                              satisfiedFlows.push_back(flowIdF);
+                              //std::cout<<"\t --> this flow is satisfied "<<std::endl;
+
+                              std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itLogicalChannels2;
+                              LteFlowId_t flow2 = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                                 
+                              itLogicalChannels2 = m_rlcBufferReq.find(flow2);
+                              itLogicalChannels2 ++;
+                              if ( itLogicalChannels2 == m_rlcBufferReq.end())
+                                 itLogicalChannels2 = m_rlcBufferReq.begin();
+
+                              m_nextRntiDl = itLogicalChannels2->first.m_rnti;
+                              m_nextLcidDl = itLogicalChannels2->first.m_lcId;
+                            }  
+                         }
+                         else 
+                         {
+                           (*itSMap).second.push_back (i);
+                           rbgMap.at (i) = true;
+                      
+                           if ( i == (rbgNum -1))
+                            {
+                               // flow still not satisfied --> mark it as the next flow 
+                               //calculate how many RBGs are allocated for this flow 
+                               int nRbg = (*itSMap).second.size() ;
+                               if ( nRbg == rbgNum)
+                                {
+                                  std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itLogicalChannels2;
+                                  LteFlowId_t flow2 = LteFlowId_t (itMax->first.m_rnti, itMax->first.m_lcId);
+                                 
+                                  itLogicalChannels2 = m_rlcBufferReq.find(flow2);
+                                  itLogicalChannels2 ++;
+                                  if ( itLogicalChannels2 == m_rlcBufferReq.end())
+                                    itLogicalChannels2 = m_rlcBufferReq.begin();
+
+                                  m_nextRntiDl = itLogicalChannels2->first.m_rnti;
+                                  m_nextLcidDl = itLogicalChannels2->first.m_lcId;
+                                }
+                               else
+                                {
+                                  m_nextRntiDl = itMax->first.m_rnti;
+                                  m_nextLcidDl = itMax->first.m_lcId;
+                                }
+                             }
+                         }
+                     }   //end if itSMap == itMap->second.end ()
+                  }  //end if itMap == allocationMapPerRntiPerLCId.end ()
+                NS_LOG_INFO (this << " UE assigned " << (uint16_t)(itLogicalChannels->first.m_rnti));
               }
-              m_nextRntiDl = (*it).m_rnti;
-              break;
-            }
+        } // end for RBG free
+    } // end for RBGs
+
+   tempV.clear();
+
+  // reorganize the allocation map to be contiguous allocated for each UE 
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > CopyAllocatedMap;
+  CopyAllocatedMap.insert ( allocationMapPerRntiPerLCId.begin(), allocationMapPerRntiPerLCId.end());
+  allocationMapPerRntiPerLCId.clear ();
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itCopy2 = CopyAllocatedMap.begin ();
+  unsigned int comp=0;
+  while (itCopy2 != CopyAllocatedMap.end ())
+   {
+      std::map <uint8_t, std::vector <uint16_t> > mapFlow=itCopy2->second;
+      std::map <uint8_t, std::vector <uint16_t> >::iterator itCopy3= mapFlow.begin();
+      
+      while (itCopy3!=mapFlow.end())
+       {
+          std::map<uint8_t, std::vector <uint16_t> > tempMap; 
+          std::vector <uint16_t> tempV;
+          for (unsigned int j=0; j< (*itCopy3).second.size ();j++,comp++) 
+           {
+              // insert new element   
+              tempV.push_back(comp);
+           }
+          std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itFind = allocationMapPerRntiPerLCId.find((*itCopy2).first);
+          if ( itFind == allocationMapPerRntiPerLCId.end()) 
+           {
+             tempMap.insert (std::pair<uint8_t, std::vector <uint16_t> > (itCopy3->first, tempV));
+             allocationMapPerRntiPerLCId.insert (std::pair <uint16_t, std::map<uint8_t, std::vector <uint16_t> > > (itCopy2->first, tempMap));
+           }
+          else
+           {
+             //rnti already in the map 
+             itFind->second.insert (std::pair<uint8_t, std::vector <uint16_t> > (itCopy3->first, tempV));       
+           }
+          tempV.clear();
+          itCopy3++;
+       }
+      itCopy2++;
+    }
+
+  itMap = allocationMapPerRntiPerLCId.begin ();
+
+  while (itMap != allocationMapPerRntiPerLCId.end ())
+    {
+      // create new BuildDataListElement_s for this LC
+      BuildDataListElement_s newEl;
+      newEl.m_rnti = (*itMap).first;
+      
+      DlDciListElement_s newDci;
+      newDci.m_rnti = (*itMap).first;
+      newDci.m_harqProcess = UpdateHarqProcessId ((*itMap).first);
+      uint16_t lcActives = LcActivePerFlow ((*itMap).first);
+      
+      if (lcActives == 0)
+        {
+          // Set to max value, to avoid divide by 0 below
+          lcActives = 1; // UINT16_MAX;
         }
 
-      if (it == m_rlcBufferReq.end ())
-        {
-          NS_LOG_ERROR (this << " no user found");
-        }
-    }
-  else
-    {
-      it = m_rlcBufferReq.begin ();
-      m_nextRntiDl = (*it).m_rnti;
-    }
-  std::map <uint16_t,uint8_t>::iterator itTxMode;
-  do
-    {
-      itLcRnti = lcActivesPerRnti.find ((*it).m_rnti);
-      std::set <uint16_t>::iterator itRnti = rntiAllocated.find ((*it).m_rnti);
-      if ((itLcRnti == lcActivesPerRnti.end ())||(itRnti != rntiAllocated.end ()))
-        {
-          // skip this RNTI (no active queue or yet allocated for HARQ)
-          uint16_t rntiDiscared = (*it).m_rnti;
-          while (it != m_rlcBufferReq.end ())
-            {
-              if ((*it).m_rnti != rntiDiscared)
-                {
-                  break;
-                }
-              it++;
-            }
-          if (it == m_rlcBufferReq.end ())
-            {
-              // restart from the first
-              it = m_rlcBufferReq.begin ();
-            }
-          continue;
-        }
-      itTxMode = m_uesTxMode.find ((*it).m_rnti);
+      std::map <uint16_t,uint8_t>::iterator itTxMode;
+      itTxMode = m_uesTxMode.find ((*itMap).first);
       if (itTxMode == m_uesTxMode.end ())
         {
-          NS_FATAL_ERROR ("No Transmission Mode info on user " << (*it).m_rnti);
+          NS_FATAL_ERROR ("No Transmission Mode info on user " << (*itMap).first);
         }
       int nLayer = TransmissionModesLayers::TxMode2LayerNum ((*itTxMode).second);
-      int lcNum = (*itLcRnti).second;
-      // create new BuildDataListElement_s for this RNTI
-      BuildDataListElement_s newEl;
-      newEl.m_rnti = (*it).m_rnti;
-      // create the DlDciListElement_s
-      DlDciListElement_s newDci;
-      newDci.m_rnti = (*it).m_rnti;
-      newDci.m_harqProcess = UpdateHarqProcessId ((*it).m_rnti);
-      newDci.m_resAlloc = 0;
-      newDci.m_rbBitmap = 0;
-      std::map <uint16_t,uint8_t>::iterator itCqi = m_p10CqiRxed.find (newEl.m_rnti);
+
+       std::map <uint16_t,uint8_t>::iterator itCqi = m_p10CqiRxed.find (newEl.m_rnti);
       for (uint8_t i = 0; i < nLayer; i++)
         {
           if (itCqi == m_p10CqiRxed.end ())
@@ -981,74 +1387,90 @@ RrFfMacScheduler::DoSchedDlTriggerReq (const struct FfMacSchedSapProvider::Sched
               newDci.m_mcs.push_back ( m_amc->GetMcsFromCqi ((*itCqi).second) );
             }
         }
-      int tbSize = (m_amc->GetDlTbSizeFromMcs (newDci.m_mcs.at (0), rbgPerTb * rbgSize) / 8);
-      uint16_t rlcPduSize = tbSize / lcNum;
-      while ((*it).m_rnti == newEl.m_rnti)
-        {
-          if ( ((*it).m_rlcTransmissionQueueSize > 0)
-               || ((*it).m_rlcRetransmissionQueueSize > 0)
-               || ((*it).m_rlcStatusPduSize > 0) )
+        std::map <uint8_t, std::vector <uint16_t> > MapAux;
+        MapAux=itMap->second;
+        std::map <uint8_t, std::vector <uint16_t> >::iterator itFF=MapAux.begin();
+        uint16_t RgbPerRnti=0;
+        for (itFF=MapAux.begin();itFF!=MapAux.end();itFF++)
+         {
+           RgbPerRnti=RgbPerRnti+(*itFF).second.size();
+         }
+
+        for (uint8_t j = 0; j < nLayer; j++)
+         {
+           int tbSize = (m_amc->GetDlTbSizeFromMcs (newDci.m_mcs.at (j), RgbPerRnti * rbgSize) / 8);
+           newDci.m_tbsSize.push_back (tbSize);
+         }
+
+        newDci.m_resAlloc = 0;  // only allocation type 0 at this stage
+        newDci.m_rbBitmap = 0; // TBD (32 bit bitmap see 7.1.6 of 36.213)
+        uint64_t rbgMask = 0;
+
+      
+        for (itFF=MapAux.begin();itFF!=MapAux.end();itFF++)
+         {
+           for (uint16_t k = 0; k < (*itFF).second.size (); k++)
             {
+              rbgMask = rbgMask + (0x1 << (*itFF).second.at (k));
+              NS_LOG_INFO (this << " Allocated RBG " << (*itFF).second.at (k));
+            }
+         }
+  
+        newDci.m_rbBitmap = rbgMask;
+      
+      std::map <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator itBufReq; 
+
+      // updating the rlc buffer : code modified by richard to find correctly the flow to update  
+      for (itFF=MapAux.begin();itFF!=MapAux.end();itFF++) 
+        {
+          LteFlowId_t flowId ((*itMap).first, (*itFF).first);
+          itBufReq = m_rlcBufferReq.find (flowId);
+          if (itBufReq == m_rlcBufferReq.end ())
+            {
+              NS_FATAL_ERROR ("Cannot find flow");
+            }
+          else if ( ((*itBufReq).second.m_rlcTransmissionQueueSize > 0)
+                   || ((*itBufReq).second.m_rlcRetransmissionQueueSize > 0)
+                   || ((*itBufReq).second.m_rlcStatusPduSize > 0) )
+            {              
+              uint16_t RgbPerFlow=(*itFF).second.size();
+              
               std::vector <struct RlcPduListElement_s> newRlcPduLe;
+              uint32_t bytesTxed = 0;
               for (uint8_t j = 0; j < nLayer; j++)
                 {
-                  RlcPduListElement_s newRlcEl;
-                  newRlcEl.m_logicalChannelIdentity = (*it).m_logicalChannelIdentity;
-                  NS_LOG_INFO (this << "LCID " << (uint32_t) newRlcEl.m_logicalChannelIdentity << " size " << rlcPduSize << " ID " << (*it).m_rnti << " layer " << (uint16_t)j);
-                  newRlcEl.m_size = rlcPduSize;
-                  UpdateDlRlcBufferInfo ((*it).m_rnti, newRlcEl.m_logicalChannelIdentity, rlcPduSize);
+                  RlcPduListElement_s newRlcEl;     // RLC element per flow 
+                  newRlcEl.m_logicalChannelIdentity = (*itBufReq).first.m_lcId;
+                  newRlcEl.m_size = (m_amc->GetDlTbSizeFromMcs (newDci.m_mcs.at (j), RgbPerFlow * rbgSize) / 8);   //transport block for this flow 
+                  NS_LOG_INFO (this << " LCID " << (uint32_t) newRlcEl.m_logicalChannelIdentity << " size " << newRlcEl.m_size << " layer " << (uint16_t)j);
+                  bytesTxed += newRlcEl.m_size ;
                   newRlcPduLe.push_back (newRlcEl);
-
+                  UpdateDlRlcBufferInfo (newDci.m_rnti, newRlcEl.m_logicalChannelIdentity, newRlcEl.m_size);
+                  //std::cout<<"\t Update DL RLC buffer , rnti = "<<(int)newDci.m_rnti<<" lcid = "<<(int)newRlcEl.m_logicalChannelIdentity<< " size = "<<(int)newRlcEl.m_size<<std::endl;
+                  
                   if (m_harqOn == true)
                     {
                       // store RLC PDU list for HARQ
-                      std::map <uint16_t, DlHarqRlcPduListBuffer_t>::iterator itRlcPdu =  m_dlHarqProcessesRlcPduListBuffer.find ((*it).m_rnti);
+                      std::map <uint16_t, DlHarqRlcPduListBuffer_t>::iterator itRlcPdu =  m_dlHarqProcessesRlcPduListBuffer.find ((*itMap).first);
                       if (itRlcPdu == m_dlHarqProcessesRlcPduListBuffer.end ())
                         {
-                          NS_FATAL_ERROR ("Unable to find RlcPdcList in HARQ buffer for RNTI " << (*it).m_rnti);
+                          NS_FATAL_ERROR ("Unable to find RlcPdcList in HARQ buffer for RNTI " << (*itMap).first);
                         }
                       (*itRlcPdu).second.at (j).at (newDci.m_harqProcess).push_back (newRlcEl);
                     }
+                } //end for 
+              newEl.m_rlcPduList.push_back (newRlcPduLe);                  
 
-                }
-              newEl.m_rlcPduList.push_back (newRlcPduLe);
-              lcNum--;
-            }
-          it++;
-          if (it == m_rlcBufferReq.end ())
-            {
-              // restart from the first
-              it = m_rlcBufferReq.begin ();
-              break;
-            }
-        }
-      uint32_t rbgMask = 0;
-      uint16_t i = 0;
-      NS_LOG_INFO (this << " DL - Allocate user " << newEl.m_rnti << " LCs " << (uint16_t)(*itLcRnti).second << " bytes " << tbSize << " mcs " << (uint16_t) newDci.m_mcs.at (0) << " harqId " << (uint16_t)newDci.m_harqProcess <<  " layers " << nLayer);
-      NS_LOG_INFO ("RBG:");
-      while (i < rbgPerTb)
-        {
-          if (rbgMap.at (rbgAllocated) == false)
-            {
-              rbgMask = rbgMask + (0x1 << rbgAllocated);
-              NS_LOG_INFO ("\t " << rbgAllocated);
-              i++;
-              rbgMap.at (rbgAllocated) = true;
-              rbgAllocatedNum++;
-            }
-          rbgAllocated++;
-        }
-      newDci.m_rbBitmap = rbgMask; // (32 bit bitmap see 7.1.6 of 36.213)
+            } // end if buffer 
+        } // end for buffer 
 
-      for (int i = 0; i < nLayer; i++)
+      for (uint8_t j = 0; j < nLayer; j++)
         {
-          newDci.m_tbsSize.push_back (tbSize);
           newDci.m_ndi.push_back (1);
           newDci.m_rv.push_back (0);
         }
 
       newDci.m_tpc = 1; //1 is mapped to 0 in Accumulated Mode and to -1 in Absolute Mode
-
       newEl.m_dci = newDci;
       if (m_harqOn == true)
         {
@@ -1067,18 +1489,31 @@ RrFfMacScheduler::DoSchedDlTriggerReq (const struct FfMacSchedSapProvider::Sched
             }
           (*itHarqTimer).second.at (newDci.m_harqProcess) = 0;
         }
-      // ...more parameters -> ignored in this version
+      // ...more parameters -> ingored in this version
 
       ret.m_buildDataList.push_back (newEl);
-      if (rbgAllocatedNum == rbgNum)
-        {
-          m_nextRntiDl = newEl.m_rnti; // store last RNTI served
-          break;                       // no more RGB to be allocated
-        }
-    }
-  while ((*it).m_rnti != m_nextRntiDl);
+      itMap++;
+    } // end while allocation
 
-  ret.m_nrOfPdcchOfdmSymbols = 1;   /// \todo check correct value according the DCIs txed  
+  ret.m_nrOfPdcchOfdmSymbols = 1;   /// \todo check correct value according the DCIs txed
+ 
+  //print allocation map
+  {
+    uint16_t usedRBGs = 0;
+    std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator allocMapRntiIt;
+    for (allocMapRntiIt = allocationMapPerRntiPerLCId.begin() ; allocMapRntiIt != allocationMapPerRntiPerLCId.end(); allocMapRntiIt++) 
+      {
+        //uint16_t rnti = allocMapRntiIt->first;
+        std::map <uint8_t, std::vector <uint16_t> >::iterator allocMapLcidIt;
+        for (allocMapLcidIt = allocMapRntiIt->second.begin() ; allocMapLcidIt != allocMapRntiIt->second.end() ; allocMapLcidIt++) 
+          {
+            //uint8_t lcid = allocMapLcidIt->first;
+            usedRBGs += allocMapLcidIt->second.size();
+            //std::cout << Simulator::Now ().GetSeconds () << " ALLOC RNTI " << rnti << " LCID " << (uint16_t) lcid << " RBGs " << allocMapLcidIt->second.size() << std::endl;          
+          }
+      }
+    //std::cout << Simulator::Now ().GetSeconds () << " TOTAL DL USED " << usedRBGs << std::endl;       
+  }
 
   m_schedSapUser->SchedDlConfigInd (ret);
   return;
@@ -1139,37 +1574,82 @@ RrFfMacScheduler::DoSchedDlCqiInfoReq (const struct FfMacSchedSapProvider::Sched
   return;
 }
 
+double
+RrFfMacScheduler::EstimateUlSinr (uint16_t rnti, uint16_t rb)
+{
+  std::map <uint16_t, std::vector <double> >::iterator itCqi = m_ueCqi.find (rnti);
+  if (itCqi == m_ueCqi.end ())
+    {
+      // no cqi info about this UE
+      return (NO_SINR);
+    }
+  else
+    {
+      // take the average SINR value among the available
+      double sinrSum = 0;
+      int sinrNum = 0;
+      for (uint32_t i = 0; i < m_cschedCellConfig.m_ulBandwidth; i++)
+        {
+          double sinr = (*itCqi).second.at (i);
+          if (sinr != NO_SINR)
+            {
+              sinrSum += sinr;
+              sinrNum++;
+            }
+        }
+      double estimatedSinr = (sinrNum > 0) ? (sinrSum / sinrNum) : DBL_MAX;
+      // store the value
+      (*itCqi).second.at (rb) = estimatedSinr;
+      return (estimatedSinr);
+    }
+}
+
 void
 RrFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::SchedUlTriggerReqParameters& params)
 {
+  //std::cout<<" ENTER RrFfMacScheduler::DoSchedUlTriggerReq"<<std::endl;
+  //Make sure we reset the allocation map in case it is present. This can happen if CQI are reported
+  //by PUSCH and the eNode B did not receive any packet from the UE (due toloss for example)
+  std::map <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > >::iterator itMap = m_allocationMaps.find (params.m_sfnSf);
+  if (itMap != m_allocationMaps.end ()) 
+   {
+    m_allocationMaps.erase (itMap);
+   }
+
+  uint16_t rbAllocatedNum = 0;
   NS_LOG_FUNCTION (this << " UL - Frame no. " << (params.m_sfnSf >> 4) << " subframe no. " << (0xF & params.m_sfnSf) << " size " << params.m_ulInfoList.size ());
 
   RefreshUlCqiMaps ();
-
+  uint16_t rbNum= m_cschedCellConfig.m_ulBandwidth;
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > allocationMapPerRntiPerLCId;     //allocation map for the UL scheduler : per UE per LCID 
   // Generate RBs map
   FfMacSchedSapUser::SchedUlConfigIndParameters ret;
   std::vector <bool> rbMap;
-  uint16_t rbAllocatedNum = 0;
   std::set <uint16_t> rntiAllocated;
-  std::vector <uint16_t> rbgAllocationMap;
-  // update with RACH allocation map
-  rbgAllocationMap = m_rachAllocationMap;
-  //rbgAllocationMap.resize (m_cschedCellConfig.m_ulBandwidth, 0);
   m_rachAllocationMap.clear ();
   m_rachAllocationMap.resize (m_cschedCellConfig.m_ulBandwidth, 0);
 
   rbMap.resize (m_cschedCellConfig.m_ulBandwidth, false);
   // remove RACH allocation
-  for (uint16_t i = 0; i < m_cschedCellConfig.m_ulBandwidth; i++)
-    {
-      if (rbgAllocationMap.at (i) != 0)
-        {
-          rbMap.at (i) = true;
-          NS_LOG_DEBUG (this << " Allocated for RACH " << i);
-        }
-    }
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itTemp1 = allocationMapPerRntiPerLCId.begin ();
 
-  if (m_harqOn == true)
+  //fill the rbmap if there is some RBGs assigned to HARQ 
+  while (itTemp1 != allocationMapPerRntiPerLCId.end ())
+   {
+      std::map <uint8_t, std::vector <uint16_t> > mapFlow=itTemp1->second;
+      std::map <uint8_t, std::vector <uint16_t> >::iterator itTemp2= mapFlow.begin();
+      while (itTemp2!=mapFlow.end())
+       {
+         for (unsigned int j=0; j< (*itTemp2).second.size () ;j++) 
+           {
+             rbMap.at ((*itTemp2).second.at(j)) = true;
+           }
+          itTemp2++;
+        }
+      itTemp1++;
+    }
+ 
+   if (m_harqOn == true)
     {
       //   Process UL HARQ feedback
       for (uint16_t i = 0; i < params.m_ulInfoList.size (); i++)
@@ -1184,11 +1664,12 @@ RrFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::Sched
                   NS_LOG_ERROR ("No info find in HARQ buffer for UE (might change eNB) " << rnti);
                 }
               uint8_t harqId = (uint8_t)((*itProcId).second - HARQ_PERIOD) % HARQ_PROC_NUM;
-              NS_LOG_INFO (this << " UL-HARQ retx RNTI " << rnti << " harqId " << (uint16_t)harqId);
+              NS_LOG_INFO (this << " UL-HARQ retx RNTI " << rnti << " harqId " << (uint16_t)harqId << " i " << i << " size "  << params.m_ulInfoList.size ());
               std::map <uint16_t, UlHarqProcessesDciBuffer_t>::iterator itHarq = m_ulHarqProcessesDciBuffer.find (rnti);
               if (itHarq == m_ulHarqProcessesDciBuffer.end ())
                 {
-                  NS_LOG_ERROR ("No info find in UL-HARQ buffer for UE (might change eNB) " << rnti);
+                  NS_LOG_ERROR ("No info find in HARQ buffer for UE (might change eNB) " << rnti);
+                  continue;
                 }
               UlDciListElement_s dci = (*itHarq).second.at (harqId);
               std::map <uint16_t, UlHarqProcessesStatus_t>::iterator itStat = m_ulHarqProcessesStatus.find (rnti);
@@ -1202,6 +1683,7 @@ RrFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::Sched
                   continue;
                 }
               bool free = true;
+
               for (int j = dci.m_rbStart; j < dci.m_rbStart + dci.m_rbLen; j++)
                 {
                   if (rbMap.at (j) == true)
@@ -1215,12 +1697,40 @@ RrFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::Sched
                   // retx on the same RBs
                   for (int j = dci.m_rbStart; j < dci.m_rbStart + dci.m_rbLen; j++)
                     {
+                      std::vector <uint16_t> tempV;
                       rbMap.at (j) = true;
-                      rbgAllocationMap.at (j) = dci.m_rnti;
+                      std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itMap;
+                      itMap = allocationMapPerRntiPerLCId.find (dci.m_rnti);
+                      if (itMap == allocationMapPerRntiPerLCId.end ())
+                       {        
+                         // insert new element
+                         std::map<uint8_t, std::vector <uint16_t> > tempMap;   
+                         tempV.push_back(j);
+                         tempMap.insert (std::pair<uint8_t, std::vector <uint16_t> > (4, tempV));
+                         allocationMapPerRntiPerLCId.insert (std::pair <uint16_t, std::map<uint8_t, std::vector <uint16_t> > > (dci.m_rnti, tempMap));                     
+                         tempV.clear();
+                       }
+                      else
+                       {
+                         std::map <uint8_t, std::vector <uint16_t> >::iterator itSMap;
+                         itSMap=itMap->second.find (4);
+                         if (itSMap == itMap->second.end ())
+                          {
+                            //insert new flow id element 
+                            tempV.push_back(j);  
+                            itMap->second.insert (std::pair<uint8_t, std::vector <uint16_t> > (4, tempV));
+                            tempV.clear();
+                          }
+                         else 
+                          {
+                            (*itSMap).second.push_back (j);
+                          }
+                        }
+                       
                       NS_LOG_INFO ("\tRB " << j);
                       rbAllocatedNum++;
                     }
-                  NS_LOG_INFO (this << " Send retx in the same RBGs " << (uint16_t)dci.m_rbStart << " to " << dci.m_rbStart + dci.m_rbLen << " RV " << (*itStat).second.at (harqId) + 1);
+                  NS_LOG_INFO (this << " Send retx in the same RBs " << (uint16_t)dci.m_rbStart << " to " << dci.m_rbStart + dci.m_rbLen << " RV " << (*itStat).second.at (harqId) + 1);
                 }
               else
                 {
@@ -1235,251 +1745,976 @@ RrFfMacScheduler::DoSchedUlTriggerReq (const struct FfMacSchedSapProvider::Sched
               ret.m_dciList.push_back (dci);
               rntiAllocated.insert (dci.m_rnti);
             }
+          else
+            {
+              NS_LOG_INFO (this << " HARQ-ACK feedback from RNTI " << params.m_ulInfoList.at (i).m_rnti);
+            }
         }
     }
 
-  std::map <uint16_t,uint32_t>::iterator it;
   int nflows = 0;
-
+  std::multimap <uint16_t, std::map <uint8_t, uint32_t> >::iterator it;
   for (it = m_ceBsrRxed.begin (); it != m_ceBsrRxed.end (); it++)
     {
       std::set <uint16_t>::iterator itRnti = rntiAllocated.find ((*it).first);
       // select UEs with queues not empty and not yet allocated for HARQ
-      NS_LOG_INFO (this << " UE " << (*it).first << " queue " << (*it).second);
-      if (((*it).second > 0)&&(itRnti == rntiAllocated.end ()))
-        {
-          nflows++;
-        }
-    }
+      std::map <uint8_t, uint32_t> mapLC=it->second;
+      std::map <uint8_t, uint32_t>::iterator itLC;
+      for (itLC=mapLC.begin(); itLC!=mapLC.end(); itLC++) 
+       {  
+         if (((*itLC).second > 0)&&(itRnti == rntiAllocated.end ()))
+          {
+            nflows++;
+          }
+       }
+   }
 
   if (nflows == 0)
     {
+      //print allocation map
+      {
+        uint32_t totalRbs = 0;
+        std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator allocMapRntiIt;
+        for (allocMapRntiIt = allocationMapPerRntiPerLCId.begin() ; allocMapRntiIt != allocationMapPerRntiPerLCId.end(); allocMapRntiIt++) 
+          {
+            uint16_t rnti = allocMapRntiIt->first;
+            std::map <uint8_t, std::vector <uint16_t> >::iterator allocMapLcidIt;
+            for (allocMapLcidIt = allocMapRntiIt->second.begin() ; allocMapLcidIt != allocMapRntiIt->second.end() ; allocMapLcidIt++) 
+              {
+                uint8_t lcid = allocMapLcidIt->first;
+                NS_LOG_DEBUG ("ALLOC RNTI " << rnti << " LCID " << (uint16_t) lcid << " RBs " << allocMapLcidIt->second.size());   
+                totalRbs+= allocMapLcidIt->second.size();
+              }
+          }
+        //std::cout << Simulator::Now ().GetSeconds () << " TOTAL UL USED " << totalRbs << std::endl;   
+      }
+
       if (ret.m_dciList.size () > 0)
         {
-          m_allocationMaps.insert (std::pair <uint16_t, std::vector <uint16_t> > (params.m_sfnSf, rbgAllocationMap));
+          m_allocationMaps.insert (std::pair <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > > (params.m_sfnSf, allocationMapPerRntiPerLCId));
           m_schedSapUser->SchedUlConfigInd (ret);
         }
+
       return;  // no flows to be scheduled
     }
 
+  //printf BSR buffer status
+  {
+    std::multimap <uint16_t, std::map <uint8_t, uint32_t> >::iterator bsrIt;
+    for (bsrIt = m_ceBsrRxed.begin() ; bsrIt != m_ceBsrRxed.end () ; bsrIt++)
+      {
+        uint16_t rnti = bsrIt->first;
+        std::map <uint8_t, uint32_t> copyBsrRnti = bsrIt->second;
+        std::map <uint8_t, uint32_t>::iterator lcidIt;
+        for (lcidIt = copyBsrRnti.begin() ; lcidIt != copyBsrRnti.end() ; lcidIt++)
+          {
+            NS_LOG_DEBUG ("BSR status: RNTI " << rnti << " LCID " << (uint16_t) lcidIt->first << " BUFFER " << lcidIt->second);
+            //std::cout<<"\t BSR status: RNTI " << (int) rnti << " LCID " << (int)lcidIt->first << " BUFFER " << (int)lcidIt->second<<std::endl;
+          }
+      }
+  }
 
-  // Divide the remaining resources equally among the active users starting from the subsequent one served last scheduling trigger
-  uint16_t rbPerFlow = (m_cschedCellConfig.m_ulBandwidth) / (nflows + rntiAllocated.size ());
-  if (rbPerFlow < 3)
+ if (rbAllocatedNum == rbNum)
+  {
+    // all the RBs are already allocated -> exit
+    if (ret.m_dciList.size () > 0)
+     {
+       m_allocationMaps.insert (std::pair <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > > (params.m_sfnSf, allocationMapPerRntiPerLCId));
+       m_schedSapUser->SchedUlConfigInd (ret);
+     }
+    return;
+  }
+
+  std::vector <bool> rbMap1=rbMap;  
+  std::vector <LteFlowId_t> satisfiedFlows;       // structure to save satisfied flows 
+  double bytesTxedF = 0;                          // accumulated data for each flows            
+
+  std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itUl = m_ceBsrRxed.begin() ;
+
+  if ( m_nextRntiUl == 0 )
+   {
+     bool findLc = false;
+     for ( itUl= m_ceBsrRxed.begin(); itUl != m_ceBsrRxed.end(); itUl ++ )
+      {
+        if ( (*itUl).first != 0 ) 
+         {
+            m_nextRntiUl = (*itUl).first;
+            std::map <uint8_t, uint32_t>::iterator itLC = (*itUl).second.begin();
+            for ( itLC = (*itUl).second.begin(); itLC != (*itUl).second.end(); itLC ++)
+             {
+                if ( itLC ->second > 0 ) 
+                 {
+                    //std::cout<<" lc = "<<(int)(*itLC).first<<" data = " <<(int)itLC ->second <<std::endl;
+                    m_nextLcidUl = (*itLC).first;
+                    findLc= true;
+                    break;
+                 }
+             }
+         }
+        if ( findLc == true )
+         break;
+      }
+   }
+
+  if ( m_nextRntiUl == 0 ) 
+   {
+     m_schedSapUser->SchedUlConfigInd (ret);
+     return;
+   }
+
+  //compute intial allocated Rbs for each flow 
+
+  std::map< LteFlowId_t, uint32_t> InitialAllocatedRbs;
+
+   std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator it1;
+   for ( it1= allocationMapPerRntiPerLCId.begin(); it1 != allocationMapPerRntiPerLCId.end(); it1 ++)
     {
-      rbPerFlow = 3;  // at least 3 rbg per flow (till available resource) to ensure TxOpportunity >= 7 bytes
+         std::map <uint8_t, std::vector <uint16_t> > maptemp = it1->second;
+         std::map <uint8_t, std::vector <uint16_t> >::iterator it2;
+         for ( it2= maptemp.begin(); it2 != maptemp.end(); it2 ++)
+          {
+             LteFlowId_t flow = LteFlowId_t (it1->first, it2->first);
+             InitialAllocatedRbs.insert ( std::pair <LteFlowId_t, uint32_t>  (flow, it2->second.size() ));
+          }
     }
-  uint16_t rbAllocated = 0;
+  
+  //std::cout<<" \t m_nextRntiUl = "<<(int)m_nextRntiUl<<" m_nextLcidUl = "<<(int)m_nextLcidUl<<std::endl;
+  std::vector <uint16_t> tempV;
+  int i=0;
+  // start the allocation procedure 
+  while (i<rbNum) 
+   {
+     NS_LOG_INFO (this << " ALLOCATION for RB " << i << " of " << rbNum);
+     //std::cout<<"\t ALLOCATION for RB " << (int)i << " of " << (int)rbNum<<std::endl;
+     if (rbMap.at (i) == false)
+      {
+        std::map <LteFlowId_t,struct LogicalChannelConfigListElement_s>:: iterator itLogicalChannels;
+        std::map <LteFlowId_t,struct LogicalChannelConfigListElement_s>:: iterator itMax = m_ueLogicalChannelsConfigList.end ();
+        
+        LteFlowId_t m_next_Ul_flow = LteFlowId_t (m_nextRntiUl, m_nextLcidUl);
+        itLogicalChannels = m_ueLogicalChannelsConfigList.find (m_next_Ul_flow);
+        if ( itLogicalChannels == m_ueLogicalChannelsConfigList.end()) 
+          itLogicalChannels = m_ueLogicalChannelsConfigList.begin();
+        do 
+         {
+           LteFlowId_t flowId1 ;
+           flowId1.m_rnti= itLogicalChannels->first.m_rnti;
+           flowId1.m_lcId= itLogicalChannels->second.m_logicalChannelIdentity;
+           std::vector <LteFlowId_t>::iterator Ft;
+           bool findF=false;
+           // check if this flow is already in the satisfied flows 
+           for(Ft=satisfiedFlows.begin();Ft!=satisfiedFlows.end();Ft++)
+            {
+              if(((*Ft).m_rnti==flowId1.m_rnti) && ((*Ft).m_lcId==flowId1.m_lcId))
+               {
+                 findF=true;
+                 break;
+               }
+            }
+           if (findF==false)
+            { 
+              //std::cout<<" rnti = "<<(int)itLogicalChannels->first.m_rnti<<" lcid = "<<(int)itLogicalChannels->second.m_logicalChannelIdentity<<" in not satisfied "<<std::endl;
+              // this flows doesn't exist in the satisfied flows --> needs more RBs to transmit           
+              // try to find this flow in the m_ceBsrRxed
+              std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator it;     
+              it=m_ceBsrRxed.find(itLogicalChannels->first.m_rnti);
+              if (it!=m_ceBsrRxed.end())
+               {
+                 std::map <uint8_t, uint32_t> mapLC=it->second;
+                 std::map <uint8_t, uint32_t>::iterator itLC=mapLC.find(itLogicalChannels->second.m_logicalChannelIdentity);
+                 if (itLC!=mapLC.end())      
+                  {
+                    if ((*itLC).second > 0)
+                     {
+                        itMax = itLogicalChannels;
+                     } 
+                    else
+                     {
+                        //std::cout<<"\t this flow not having data "<<std::endl;
+                        itLC ++;
+                        if ( itLC == mapLC.end())
+                         {
+                           it ++;
+                           if ( it == m_ceBsrRxed.end() ) 
+                             it = m_ceBsrRxed.begin();
+                     
+                           itLC = it->second.begin();
+                         }
+                        m_nextRntiUl = it->first;
+                        m_nextLcidUl = itLC->first; 
+                        
+                        m_next_Ul_flow = LteFlowId_t (m_nextRntiUl, m_nextLcidUl);   // added ! 
+                        itLogicalChannels= m_ueLogicalChannelsConfigList.find(m_next_Ul_flow); // added ! 
+                       continue;
+                      }
+                  } 
+                } 
+            }  //end findF==false
+           itLogicalChannels ++;
+           if ( itLogicalChannels == m_ueLogicalChannelsConfigList.end ()) 
+               itLogicalChannels = m_ueLogicalChannelsConfigList.begin ();   
 
-  if (m_nextRntiUl != 0)
+         } //end for itLogicalchannels
+       while ( (itLogicalChannels->first.m_rnti ==  m_next_Ul_flow.m_rnti) && ( itLogicalChannels->second.m_logicalChannelIdentity == m_next_Ul_flow.m_lcId) );
+
+       if (itMax == m_ueLogicalChannelsConfigList.end ())
+        {
+          // no UE available for this RB
+          NS_LOG_INFO (this << " any UE found");
+        }
+       else
+        {
+          //std::cout<<"\t selected flow , rnti = "<<(int)itMax->first.m_rnti<<" lcid = "<<(int)itMax->second.m_logicalChannelIdentity<<std::endl;
+          std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itMap;
+          itMap = allocationMapPerRntiPerLCId.find ((uint16_t)(itMax->first.m_rnti));
+            
+          if (itMap == allocationMapPerRntiPerLCId.end ())
+           {
+             // first time allocation for this flow 
+             //std::cout<<"\t first time allocation "<<std::endl;
+             std::map<uint8_t, std::vector <uint16_t> > tempMap;
+                    
+             tempV.push_back(i);
+             tempMap.insert (std::pair<uint8_t, std::vector <uint16_t> > (itMax->second.m_logicalChannelIdentity, tempV));
+             allocationMapPerRntiPerLCId.insert (std::pair <uint16_t, std::map<uint8_t, std::vector <uint16_t> > > (itMax->first.m_rnti, tempMap));
+             rbMap.at (i) = true; 
+             tempV.clear();
+             /************ trying to see if this flow is satisfied by this first allocation   ***************************/ 
+                std::map <uint16_t, std::vector <double> >::iterator itCqi = m_ueCqi.find (itMax->first.m_rnti);  
+                int cqi = 0;
+                int mcsF=0;
+                if (itCqi == m_ueCqi.end ())
+                 {
+                   cqi =1 ;
+                 }
+                else 
+                 {
+                    double maxSinr = 0;
+                    for (unsigned int i = 0; i < (*itCqi).second.size(); i++)
+                     {
+                       if ((*itCqi).second.at (i) > maxSinr)
+                        {
+                          maxSinr = (*itCqi).second.at (i);
+                        }
+                     }
+                   double s = log2 ( 1 + (
+                   std::pow (10, maxSinr / 10 )  /
+                          ( (-std::log (5.0 * 0.00005 )) / 1.5) ));
+
+                   cqi = m_amc->GetCqiFromSpectralEfficiency (s);
+                 }
+
+                if (cqi > 0 ) // CQI == 0 means "out of range" (see table 7.2.3-1 of 36.213)
+                 {
+                   std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itUl;
+                   itUl=m_ceBsrRxed.find(itMax->first.m_rnti);
+                   std::map <uint8_t, uint32_t> mapUl=itUl->second;
+                   std::map <uint8_t, uint32_t>:: iterator itmapUl;
+                   int dataUl=0;
+                   for (itmapUl=mapUl.begin(); itmapUl!=mapUl.end(); itmapUl++)
+                    {
+                      dataUl=dataUl+(*itmapUl).second;
+                    }
+                   if (dataUl > 0)             
+                    {                          
+                      // this UE has data to transmit   
+                      mcsF = m_amc->GetMcsFromCqi (cqi);
+                      //std::cout<<" MCS: "<<(int)mcsF<<std::endl;
+                    }                       
+                 }    
+                bytesTxedF=(m_amc->GetUlTbSizeFromMcs (mcsF, 1) / 8) ; 
+                
+                LteFlowId_t flowIdF = LteFlowId_t (itMax->first.m_rnti, itMax->second.m_logicalChannelIdentity);
+                // try to find this flow in the m_ceBsrRxed
+                std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itTemp;
+                itTemp=m_ceBsrRxed.find(itMax->first.m_rnti);  
+                std::map <uint8_t, uint32_t> mapLCTemp=itTemp->second;
+                std::map <uint8_t, uint32_t>::iterator itLCTemp=mapLCTemp.find(itMax->second.m_logicalChannelIdentity);
+                //std::cout<<" rnti = "<<(int) itMax->first.m_rnti<<" lcid = "<<(int)itMax->second.m_logicalChannelIdentity<<" mcs = "<<(int) mcsF<<" data to send = "<<(int)(*itLCTemp).second<<" allcated data = "<<(int)bytesTxedF<<std::endl;
+
+                if ((*itLCTemp).second <= bytesTxedF )
+                 {
+                   //std::cout<<"\t --> flow satisfied "<<std::endl;
+                   //this flow is  satisfied with this new allocation --> add it to satisfied flows 
+                   satisfiedFlows.push_back(flowIdF);
+
+                   std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itLogicalChannels2;
+                   itLogicalChannels2 = m_ceBsrRxed.find(itMax->first.m_rnti);
+                   std::map <uint8_t, uint32_t> mapLc = itLogicalChannels2->second;
+                   std::map <uint8_t, uint32_t>:: iterator itMapLc = mapLc.find(itMax->second.m_logicalChannelIdentity);
+                   
+                   itMapLc ++;
+                   if ( itMapLc == mapLc.end())
+                    {
+                      itLogicalChannels2 ++;
+                      if ( itLogicalChannels2 == m_ceBsrRxed.end() ) 
+                         itLogicalChannels2 = m_ceBsrRxed.begin();
+                     
+                      itMapLc = itLogicalChannels2->second.begin();
+                    }
+
+                   m_nextRntiUl = itLogicalChannels2->first;
+                   m_nextLcidUl = itMapLc->first;
+                 }
+                else if ( i == (rbNum -1))
+                 {
+                   // flow still not satisfied --> mark it as the next flow 
+                   m_nextRntiUl = itMax->first.m_rnti;
+                   m_nextLcidUl = itMax->second.m_logicalChannelIdentity;
+                 }
+           }
+          else
+           {
+             // rnti already exist in the allocation map, check the lcid 
+             std::set <uint16_t>::iterator itCheckHarq = rntiAllocated.find( itMax->first.m_rnti);
+             if ( itCheckHarq != rntiAllocated.end () ) // check if rnti is already allocated for UL HARQ 
+              {
+                  std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itLogicalChannels2;
+                  itLogicalChannels2 = m_ceBsrRxed.find(itMax->first.m_rnti);
+                  std::map <uint8_t, uint32_t> mapLc = itLogicalChannels2->second;
+                  std::map <uint8_t, uint32_t>:: iterator itMapLc ;
+                   
+                  itLogicalChannels2 ++;
+                  if ( itLogicalChannels2 == m_ceBsrRxed.end() ) 
+                     itLogicalChannels2 = m_ceBsrRxed.begin();
+                     
+                  itMapLc = itLogicalChannels2->second.begin();
+
+                  m_nextRntiUl = itLogicalChannels2->first;
+                  m_nextLcidUl = itMapLc->first;
+              }
+             else 
+              {
+             std::map <uint8_t, std::vector <uint16_t> >::iterator itSMap;
+             itSMap=itMap->second.find ((uint8_t)itMax->second.m_logicalChannelIdentity);
+             if (itSMap == itMap->second.end ())
+              {
+                //std::cout<<"\t first time allocation for this lcid "<<std::endl;
+                //insert new lc id element 
+                tempV.push_back(i);    
+                itMap->second.insert (std::pair<uint8_t, std::vector <uint16_t> > (itMax->second.m_logicalChannelIdentity, tempV));
+                rbMap.at (i) = true; 
+                tempV.clear();
+                /************ trying to see if this flow is satisfied by this first allocation   ***************************/ 
+                std::map <uint16_t, std::vector <double> >::iterator itCqi = m_ueCqi.find (itMax->first.m_rnti);  
+                int cqi = 0;
+                int mcsF=0;
+                if (itCqi == m_ueCqi.end ())
+                 {
+                   cqi =1 ;
+                 }
+                else 
+                 {
+                    // take the lowest CQI value (worst RB)
+                    double maxSinr = 0;
+                    for (unsigned int i = 0; i < (*itCqi).second.size(); i++)
+                     {
+                       if ((*itCqi).second.at (i) > maxSinr)
+                        {
+                          maxSinr = (*itCqi).second.at (i);
+                        }
+                     }
+                   /*****************************************************************/
+                   double s = log2 ( 1 + (
+                   std::pow (10, maxSinr / 10 )  /
+                          ( (-std::log (5.0 * 0.00005 )) / 1.5) ));
+
+                   cqi = m_amc->GetCqiFromSpectralEfficiency (s);
+                 }
+
+                if (cqi > 0 ) // CQI == 0 means "out of range" (see table 7.2.3-1 of 36.213)
+                 {
+                   std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itUl;
+                   itUl=m_ceBsrRxed.find(itMax->first.m_rnti);
+                   std::map <uint8_t, uint32_t> mapUl=itUl->second;
+                   std::map <uint8_t, uint32_t>:: iterator itmapUl;
+                   int dataUl=0;
+                   for (itmapUl=mapUl.begin(); itmapUl!=mapUl.end(); itmapUl++)
+                    {
+                      dataUl=dataUl+(*itmapUl).second;
+                    }
+                   if (dataUl > 0)             
+                    {                          
+                      // this UE has data to transmit   
+                      mcsF = m_amc->GetMcsFromCqi (cqi);
+                      //std::cout<<" MCS: "<<(int)mcsF<<std::endl;
+                    }                       
+                 }    
+                bytesTxedF=(m_amc->GetUlTbSizeFromMcs (mcsF, 1) / 8) ; 
+                LteFlowId_t flowIdF = LteFlowId_t (itMax->first.m_rnti, itMax->second.m_logicalChannelIdentity);
+                // try to find this flow in the m_ceBsrRxed
+                std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itTemp;
+                itTemp=m_ceBsrRxed.find(itMax->first.m_rnti);  
+                std::map <uint8_t, uint32_t> mapLCTemp=itTemp->second;
+                std::map <uint8_t, uint32_t>::iterator itLCTemp=mapLCTemp.find(itMax->second.m_logicalChannelIdentity);
+
+                 //std::cout<<" rnti = "<<(int) itMax->first.m_rnti<<" lcid = "<<(int)itMax->second.m_logicalChannelIdentity<<" mcs = "<<(int) mcsF<<" data to send = "<<(int)(*itLCTemp).second<<" allcated data = "<<(int)bytesTxedF<<std::endl;
+
+                if ((*itLCTemp).second <= bytesTxedF )
+                 {
+                   //this flow is  satisfied with this new allocation --> add it to satisfied flows 
+                   //std::cout<<"\t --> flow satisfied "<<std::endl;
+                   satisfiedFlows.push_back(flowIdF);
+
+                   std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itLogicalChannels2;
+                   itLogicalChannels2 = m_ceBsrRxed.find(itMax->first.m_rnti);
+                   std::map <uint8_t, uint32_t> mapLc = itLogicalChannels2->second;
+                   std::map <uint8_t, uint32_t>:: iterator itMapLc = mapLc.find(itMax->second.m_logicalChannelIdentity);
+                   
+                   
+                   itMapLc ++;
+                   if ( itMapLc == mapLc.end())
+                    {
+                      itLogicalChannels2 ++;
+                      if ( itLogicalChannels2 == m_ceBsrRxed.end() ) 
+                         itLogicalChannels2 = m_ceBsrRxed.begin();
+                     
+                      itMapLc = itLogicalChannels2->second.begin();
+                      
+                    }
+
+                   m_nextRntiUl = itLogicalChannels2->first;
+                   m_nextLcidUl = itMapLc->first;
+                 }
+                else if ( i == (rbNum -1))
+                 {
+                   // flow still not satisfied --> mark it as the next flow 
+                   m_nextRntiUl = itMax->first.m_rnti;
+                   m_nextLcidUl = itMax->second.m_logicalChannelIdentity;
+                 }
+              }
+             else 
+              {
+                // the lc id already exists --> check if it needs more RBs or not     
+                //std::cout<<"\t need for addtional allocation for this lcid "<<std::endl; 
+                LteFlowId_t flowInitial = LteFlowId_t (itMax->first.m_rnti, itMax->second.m_logicalChannelIdentity);
+                std::map< LteFlowId_t, uint32_t>::iterator itInittial= InitialAllocatedRbs.find( flowInitial );
+                uint32_t initialRbAllocated= itInittial->second; 
+                if ( initialRbAllocated > 0 )  // flow already allocsted in UL HARQ --> skip it 
+                 {
+                    std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itLogicalChannels2;
+                    itLogicalChannels2 = m_ceBsrRxed.find(itMax->first.m_rnti);
+                    std::map <uint8_t, uint32_t> mapLc = itLogicalChannels2->second;
+                    std::map <uint8_t, uint32_t>:: iterator itMapLc ;
+                   
+                    itLogicalChannels2 ++;
+                    if ( itLogicalChannels2 == m_ceBsrRxed.end() ) 
+                       itLogicalChannels2 = m_ceBsrRxed.begin();
+                     
+                    itMapLc = itLogicalChannels2->second.begin();
+
+                    m_nextRntiUl = itLogicalChannels2->first;
+                    m_nextLcidUl = itMapLc->first;
+                    
+                 }
+                else 
+                 { 
+                  //std::cout<<"\t this flow has initial rb allocated = "<<(int) initialRbAllocated<<std::endl;
+                  int b=1;
+                  b=b+(*itSMap).second.size()- initialRbAllocated;   // number of allocated RBs + 1 (the current RB) 
+                  std::map <uint16_t, std::vector <double> >::iterator itCqi = m_ueCqi.find (itMax->first.m_rnti);  
+                  int cqi = 0;
+                  int mcsF=0;
+                  if (itCqi == m_ueCqi.end ())
+                  {
+                    cqi =1 ;
+                  }
+                  else 
+                  {
+                      double maxSinr = 0;
+                      for (unsigned int i = 0; i < (*itCqi).second.size(); i++)
+                      {
+                        if ((*itCqi).second.at (i) > maxSinr)
+                          {
+                            maxSinr = (*itCqi).second.at (i);
+                          }
+                      }
+                    double s = log2 ( 1 + (
+                    std::pow (10, maxSinr / 10 )  /
+                            ( (-std::log (5.0 * 0.00005 )) / 1.5) ));
+
+                    cqi = m_amc->GetCqiFromSpectralEfficiency (s);
+                  }
+
+                  if (cqi > 0 ) // CQI == 0 means "out of range" (see table 7.2.3-1 of 36.213)
+                  {
+                    std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itUl;
+                    itUl=m_ceBsrRxed.find(itMax->first.m_rnti);
+                    std::map <uint8_t, uint32_t> mapUl=itUl->second;
+                    std::map <uint8_t, uint32_t>:: iterator itmapUl;
+                    int dataUl=0;
+                    for (itmapUl=mapUl.begin(); itmapUl!=mapUl.end(); itmapUl++)
+                      {
+                        dataUl=dataUl+(*itmapUl).second;
+                      }
+                    if (dataUl > 0)             
+                      {                          
+                        // this UE has data to transmit   
+                        mcsF = m_amc->GetMcsFromCqi (cqi);
+                        //std::cout<<" MCS: "<<(int)mcsF<<std::endl;
+                      }                       
+                  }    
+                
+                  bytesTxedF=(m_amc->GetUlTbSizeFromMcs (mcsF, b * 1) / 8) ; 
+                  LteFlowId_t flowIdF = LteFlowId_t (itMax->first.m_rnti, itMax->second.m_logicalChannelIdentity);
+                  // try to find this flow in the m_ceBsrRxed
+                  std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itTemp;
+                  itTemp=m_ceBsrRxed.find(itMax->first.m_rnti);  
+                  std::map <uint8_t, uint32_t> mapLCTemp=itTemp->second;
+                  std::map <uint8_t, uint32_t>::iterator itLCTemp=mapLCTemp.find(itMax->second.m_logicalChannelIdentity);
+                  
+                  //std::cout<<" rnti = "<<(int) itMax->first.m_rnti<<" lcid = "<<(int)itMax->second.m_logicalChannelIdentity<<" mcs = "<<(int) mcsF<<" data to send = "<<(int)(*itLCTemp).second<<" allcated data = "<<(int)bytesTxedF<<std::endl;
+
+                  if ((*itLCTemp).second <= bytesTxedF )
+                  {
+                    (*itSMap).second.push_back (i);
+                    rbMap.at (i) = true;
+                
+                    //this flow is  satisfied with this new allocation --> add it to satisfied flows 
+                    std::vector <LteFlowId_t>::iterator Ft;
+                    bool findF2=false;
+                    for(Ft=satisfiedFlows.begin();Ft!=satisfiedFlows.end();Ft++)
+                      {
+                        if(((*Ft).m_rnti==flowIdF.m_rnti) && ((*Ft).m_lcId==flowIdF.m_lcId))
+                        {
+                          findF2=true;
+                          break;
+                        }
+                      }
+                      if (findF2==false)
+                      {
+                        //std::cout<<"\t --> flow satisfied "<<std::endl;
+                        satisfiedFlows.push_back(flowIdF);
+
+                        std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itLogicalChannels2;
+                        itLogicalChannels2 = m_ceBsrRxed.find(itMax->first.m_rnti);
+                        std::map <uint8_t, uint32_t> mapLc = itLogicalChannels2->second;
+                        std::map <uint8_t, uint32_t>:: iterator itMapLc = mapLc.find(itMax->second.m_logicalChannelIdentity);
+                    
+                    
+                        itMapLc ++;
+                        if ( itMapLc == mapLc.end())
+                          {
+                            itLogicalChannels2 ++;
+                            if ( itLogicalChannels2 == m_ceBsrRxed.end() ) 
+                              itLogicalChannels2 = m_ceBsrRxed.begin();
+                      
+                            itMapLc = itLogicalChannels2->second.begin();
+                        
+                          }
+
+                        m_nextRntiUl = itLogicalChannels2->first;
+                        m_nextLcidUl = itMapLc->first;
+                      }
+                    }
+                    else 
+                    {
+                            
+                      (*itSMap).second.push_back (i);
+                      rbMap.at (i) = true;
+                      if ( i == (rbNum -1))
+                        {
+                          // flow still not satisfied --> mark it as the next flow 
+                          //calculate how many RBGs are allocated for this flow 
+                          int nRbg = (*itSMap).second.size() ;
+                          if ( nRbg == rbNum)
+                            {
+                              std::multimap <uint16_t, std::map <uint8_t, uint32_t> >:: iterator itLogicalChannels2;
+                              itLogicalChannels2 = m_ceBsrRxed.find(itMax->first.m_rnti);
+                              std::map <uint8_t, uint32_t> mapLc = itLogicalChannels2->second;
+                              std::map <uint8_t, uint32_t>:: iterator itMapLc = mapLc.find(itMax->second.m_logicalChannelIdentity);
+                    
+                              itMapLc ++;
+                              if ( itMapLc == mapLc.end())
+                                {
+                                  itLogicalChannels2 ++;
+                                  if ( itLogicalChannels2 == m_ceBsrRxed.end() ) 
+                                    itLogicalChannels2 = m_ceBsrRxed.begin();
+                      
+                                  itMapLc = itLogicalChannels2->second.begin();
+                        
+                                }
+
+                              m_nextRntiUl = itLogicalChannels2->first;
+                              m_nextLcidUl = itMapLc->first;
+                            }
+                          else
+                            {
+                              m_nextRntiUl = itMax->first.m_rnti;
+                              m_nextLcidUl = itMax->first.m_lcId;
+                            }
+                      }
+                    }
+                  }   // flow already allocated in UL HARQ 
+                 }   //end if itSMap == itMap->second.end ()
+                }  // end if check if rnti already allocated for  UL HARQ 
+               }  //end if itMap == allocationMapPerRntiPerLCId.end ()
+                NS_LOG_INFO (this << " UE assigned " << (uint16_t)(itLogicalChannels->first.m_rnti));
+            }
+        } // end for RBG free
+     i++;
+   } // end while i < rbgNum 
+
+
+  // reorganize the allocation map to be contiguous allocated for each UE 
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > CopyAllocatedMap;
+  CopyAllocatedMap.insert ( allocationMapPerRntiPerLCId.begin(), allocationMapPerRntiPerLCId.end());
+  allocationMapPerRntiPerLCId.clear ();
+  std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itCopy2 = CopyAllocatedMap.begin ();
+  unsigned int comp=0;
+  while (itCopy2 != CopyAllocatedMap.end ())
+   {
+      std::map <uint8_t, std::vector <uint16_t> > mapFlow=itCopy2->second;
+      std::map <uint8_t, std::vector <uint16_t> >::iterator itCopy3= mapFlow.begin();
+      
+      while (itCopy3!=mapFlow.end())
+       {
+          std::map<uint8_t, std::vector <uint16_t> > tempMap; 
+          std::vector <uint16_t> tempV;
+          for (unsigned int j=0; j< (*itCopy3).second.size ();j++,comp++) 
+           {
+              // insert new element   
+              tempV.push_back(comp);
+           }
+          std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itFind = allocationMapPerRntiPerLCId.find((*itCopy2).first);
+          if ( itFind == allocationMapPerRntiPerLCId.end()) 
+           {
+             tempMap.insert (std::pair<uint8_t, std::vector <uint16_t> > (itCopy3->first, tempV));
+             allocationMapPerRntiPerLCId.insert (std::pair <uint16_t, std::map<uint8_t, std::vector <uint16_t> > > (itCopy2->first, tempMap));
+           }
+          else
+           {
+             //rnti already in the map 
+             itFind->second.insert (std::pair<uint8_t, std::vector <uint16_t> > (itCopy3->first, tempV));       
+           }
+          tempV.clear();
+          itCopy3++;
+       }
+      itCopy2++;
+    }             
+
+  uint16_t rbAllocated = 0;
+  //std::multimap <uint16_t, std::map <uint8_t, uint32_t> >::iterator it;
+  //int nflows = 0;
+  std::vector<uint16_t> RntiAssigned;
+
+   if (m_nextRntiUl != 0)
     {
-      for (it = m_ceBsrRxed.begin (); it != m_ceBsrRxed.end (); it++)
+      for (it = m_ceBsrRxed.begin (); it !=m_ceBsrRxed.end (); it++)
         {
           if ((*it).first == m_nextRntiUl)
             {
               break;
             }
         }
-      if (it == m_ceBsrRxed.end ())
+      if (it == m_ceBsrRxed.end())
         {
           NS_LOG_ERROR (this << " no user found");
         }
     }
   else
     {
-      it = m_ceBsrRxed.begin ();
+      it =  m_ceBsrRxed.begin ();
       m_nextRntiUl = (*it).first;
     }
-  NS_LOG_INFO (this << " NFlows " << nflows << " RB per Flow " << rbPerFlow);
-  do
+
+    uint16_t rbRnti=0;
+    std::vector<uint16_t> UETreated;
+   do
     {
-      std::set <uint16_t>::iterator itRnti = rntiAllocated.find ((*it).first);
-      if ((itRnti != rntiAllocated.end ())||((*it).second == 0))
+      std::set <uint16_t>::iterator itRnti = rntiAllocated.find ((*it).first);  
+      
+      std::map <uint8_t, uint32_t> mapLC=it->second;
+      std::map <uint8_t, uint32_t>::iterator itLC;
+      double data=0;
+      for (itLC=mapLC.begin(); itLC!=mapLC.end();itLC++)
+       {
+         data=data+(*itLC).second;   
+       }
+      //std::cout<<" \t RNTI : "<< (*it).first<< " data to send = "<<(int) data <<std::endl;
+      // RBs per RNTI :
+      rbRnti=0;
+      std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itTmp1 = allocationMapPerRntiPerLCId.find ((*it).first);
+      if (itTmp1!=allocationMapPerRntiPerLCId.end())
+       {
+        std::map <uint8_t, std::vector <uint16_t> > mapFlow1=itTmp1->second;
+        std::map <uint8_t, std::vector <uint16_t> >::iterator itTmp2;
+        for (itTmp2=mapFlow1.begin(); itTmp2!=mapFlow1.end(); itTmp2++)
+         {
+           // check already allocated rbs 
+           LteFlowId_t flowInitial = LteFlowId_t ((*it).first, (*itTmp2).first);
+           std::map< LteFlowId_t, uint32_t>::iterator itInittial= InitialAllocatedRbs.find( flowInitial );
+           uint32_t initialRbAllocated= itInittial->second;
+           rbRnti=rbRnti+ (*itTmp2).second.size() - initialRbAllocated;
+         }
+       }
+
+      
+       
+       //std::cout<<" \t RNTI : "<< (*it).first<< " rb allocated = "<<(int)rbRnti<<" data to send = "<<(int) data <<std::endl;
+     
+      bool findUETreated=false;
+      for (unsigned int k = 0; k < UETreated.size(); k++)
+       {
+          if ( UETreated.at(k)==(*it).first)
+             findUETreated=true;    
+       }
+
+      if ( (rbRnti > 0) && (findUETreated==true) )
         {
-          // UE already allocated for UL-HARQ -> skip it
-          it++;
-          if (it == m_ceBsrRxed.end ())
-            {
-              // restart from the first
-              it = m_ceBsrRxed.begin ();
-            }
-          continue;
+           //std::cout<<" findUETreated==true --> exit loop "<<std::endl;
+           rbRnti = 0;
+           m_nextRntiUl = (*it).first;
+           continue;
         }
-      if (rbAllocated + rbPerFlow - 1 > m_cschedCellConfig.m_ulBandwidth)
-        {
-          // limit to physical resources last resource assignment
-          rbPerFlow = m_cschedCellConfig.m_ulBandwidth - rbAllocated;
-          // at least 3 rbg per flow to ensure TxOpportunity >= 7 bytes
-          if (rbPerFlow < 3)
-            {
-              // terminate allocation
-              rbPerFlow = 0;      
-            }
-        }
-      NS_LOG_INFO (this << " try to allocate " << (*it).first);
+      if ((itRnti != rntiAllocated.end ())||(data == 0) || (rbRnti==0))
+       {
+         // UE already allocated for UL-HARQ -> skip it
+         it++;
+         if (it == m_ceBsrRxed.end ())
+          {
+            
+            // restart from the first
+            it = m_ceBsrRxed.begin ();
+            //std::cout<<" reach bsrEnd , first bsr begin = "<<(int)(*it).first<<std::endl;
+          }
+         //std::cout<<" \t m_nextRntiUl = "<<(int)m_nextRntiUl<<" it rnti = "<<(int)(*it).first<<std::endl;
+         continue;
+       } 
+
+      
+      if (rbAllocated + rbRnti - 1 > m_cschedCellConfig.m_ulBandwidth)
+       {
+         // limit to physical resources last resource assignment
+         rbRnti = m_cschedCellConfig.m_ulBandwidth - rbAllocated;
+         // at least 3 rbg per flow to ensure TxOpportunity >= 7 bytes
+         if (rbRnti < 3)
+          {
+            // terminate allocation
+            rbRnti = 0;     
+          }
+       }
+
+      NS_LOG_INFO (this << " try to allocate Rnti: " << (*it).first);
+      //std::cout<<" \t try to allocate Rnti: " << (int)(*it).first<<std::endl;
       UlDciListElement_s uldci;
       uldci.m_rnti = (*it).first;
-      uldci.m_rbLen = rbPerFlow;
+      uldci.m_rbLen = rbRnti;
       bool allocated = false;
-      NS_LOG_INFO (this << " RB Allocated " << rbAllocated << " rbPerFlow " << rbPerFlow << " flows " << nflows);
-      while ((!allocated)&&((rbAllocated + rbPerFlow - m_cschedCellConfig.m_ulBandwidth) < 1) && (rbPerFlow != 0))
-        {
-          // check availability
-          bool free = true;
-          for (uint16_t j = rbAllocated; j < rbAllocated + rbPerFlow; j++)
-            {
-              if (rbMap.at (j) == true)
-                {
-                  free = false;
-                  break;
-                }
-            }
-          if (free)
-            {
-              uldci.m_rbStart = rbAllocated;
+      while ((!allocated)&&((rbAllocated + rbRnti - m_cschedCellConfig.m_ulBandwidth) < 1) && (rbRnti != 0))
+       {
+         // check availability
+         bool free = true; 
+         for (uint16_t j = rbAllocated; j < rbAllocated + rbRnti; j++)
+           {
+             if (rbMap1.at (j) == true)
+               {
+                 free = false;
+                 break;
+               }
+           }
+         if (free)
+           {
+             uldci.m_rbStart = rbAllocated;
 
-              for (uint16_t j = rbAllocated; j < rbAllocated + rbPerFlow; j++)
-                {
-                  rbMap.at (j) = true;
-                  // store info on allocation for managing ul-cqi interpretation
-                  rbgAllocationMap.at (j) = (*it).first;
-                  NS_LOG_INFO ("\t " << j);
-                }
-              rbAllocated += rbPerFlow;
-              allocated = true;
-              break;
-            }
-          rbAllocated++;
-          if (rbAllocated + rbPerFlow - 1 > m_cschedCellConfig.m_ulBandwidth)
-            {
-              // limit to physical resources last resource assignment
-              rbPerFlow = m_cschedCellConfig.m_ulBandwidth - rbAllocated;
-              // at least 3 rbg per flow to ensure TxOpportunity >= 7 bytes
-              if (rbPerFlow < 3)
-                {
-                  // terminate allocation
-                  rbPerFlow = 0;                 
-                }
-            }
-        }
+             for (uint16_t j = rbAllocated; j < rbAllocated + rbRnti; j++)
+               {
+                 rbMap1.at (j) = true;                 
+               }
+             rbAllocated += rbRnti;
+             allocated = true;
+             break;
+           }
+         rbAllocated++;
+         if (rbAllocated + rbRnti - 1 > m_cschedCellConfig.m_ulBandwidth)
+           {
+             // limit to physical resources last resource assignment
+             rbRnti = m_cschedCellConfig.m_ulBandwidth - rbAllocated;
+             // at least 3 rbg per flow to ensure TxOpportunity >= 7 bytes
+             if (rbRnti < 3)
+               {
+                 // terminate allocation
+                 rbRnti = 0;
+               }
+           }
+       } // end while
+        
       if (!allocated)
-        {
-          // unable to allocate new resource: finish scheduling
-          m_nextRntiUl = (*it).first;
-          if (ret.m_dciList.size () > 0)
-            {
-              m_schedSapUser->SchedUlConfigInd (ret);
-            }
-          m_allocationMaps.insert (std::pair <uint16_t, std::vector <uint16_t> > (params.m_sfnSf, rbgAllocationMap));
-          return;
-        }
-      std::map <uint16_t, std::vector <double> >::iterator itCqi = m_ueCqi.find ((*it).first);
-      int cqi = 0;
-      if (itCqi == m_ueCqi.end ())
-        {
-          // no cqi info about this UE
-          uldci.m_mcs = 0; // MCS 0 -> UL-AMC TBD
-          NS_LOG_INFO (this << " UE does not have ULCQI " << (*it).first );
-        }
-      else
-        {
-          // take the lowest CQI value (worst RB)
-          double minSinr = (*itCqi).second.at (uldci.m_rbStart);
-          for (uint16_t i = uldci.m_rbStart; i < uldci.m_rbStart + uldci.m_rbLen; i++)
-            {
-              if ((*itCqi).second.at (i) < minSinr)
-                {
-                  minSinr = (*itCqi).second.at (i);
-                }
-            }
-          // translate SINR -> cqi: WILD ACK: same as DL
-          double s = log2 ( 1 + (
-                                 std::pow (10, minSinr / 10 )  /
-                                 ( (-std::log (5.0 * 0.00005 )) / 1.5) ));
+       {
+         // unable to allocate new resource: finish scheduling
+         m_nextRntiUl = (*it).first;
+         if (ret.m_dciList.size () > 0)
+           {
+             m_schedSapUser->SchedUlConfigInd (ret);
+           }
+         m_allocationMaps.insert (std::pair <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > > (params.m_sfnSf, allocationMapPerRntiPerLCId));
+         return;
+       }
 
+     std::map <uint16_t, std::vector <double> >::iterator itCqi = m_ueCqi.find ((*it).first);
+     int cqi = 0;
+     if (itCqi == m_ueCqi.end ())
+       {
+         // no cqi info about this UE
+         uldci.m_mcs = 0; // MCS 0 -> UL-AMC TBD
+       }
+     else
+       {
+          double maxSinr = 0;
+          for (unsigned int i = 0; i < (*itCqi).second.size(); i++)
+           {
+              if ((*itCqi).second.at (i) > maxSinr)
+               {
+                  maxSinr = (*itCqi).second.at (i);
+               }
+            }
+ 
+          double s = log2 ( 1 + (
+          std::pow (10, maxSinr / 10 )  /
+                   ( (-std::log (5.0 * 0.00005 )) / 1.5) ));
 
           cqi = m_amc->GetCqiFromSpectralEfficiency (s);
-          if (cqi == 0)
-            {
-              it++;
-              if (it == m_ceBsrRxed.end ())
-                {
-                  // restart from the first
-                  it = m_ceBsrRxed.begin ();
-                }
-              NS_LOG_DEBUG (this << " UE discared for CQI=0, RNTI " << uldci.m_rnti);
-              // remove UE from allocation map
-              for (uint16_t i = uldci.m_rbStart; i < uldci.m_rbStart + uldci.m_rbLen; i++)
-                {
-                  rbgAllocationMap.at (i) = 0;
-                }
-              continue; // CQI == 0 means "out of range" (see table 7.2.3-1 of 36.213)
-            }
-          uldci.m_mcs = m_amc->GetMcsFromCqi (cqi);
-        }
-      uldci.m_tbSize = (m_amc->GetUlTbSizeFromMcs (uldci.m_mcs, rbPerFlow) / 8); // MCS 0 -> UL-AMC TBD
-
-      UpdateUlRlcBufferInfo (uldci.m_rnti, uldci.m_tbSize);
-      uldci.m_ndi = 1;
-      uldci.m_cceIndex = 0;
-      uldci.m_aggrLevel = 1;
-      uldci.m_ueTxAntennaSelection = 3; // antenna selection OFF
-      uldci.m_hopping = false;
-      uldci.m_n2Dmrs = 0;
-      uldci.m_tpc = 0; // no power control
-      uldci.m_cqiRequest = false; // only period CQI at this stage
-      uldci.m_ulIndex = 0; // TDD parameter
-      uldci.m_dai = 1; // TDD parameter
-      uldci.m_freqHopping = 0;
-      uldci.m_pdcchPowerOffset = 0; // not used
-      ret.m_dciList.push_back (uldci);
-      // store DCI for HARQ_PERIOD
-      uint8_t harqId = 0;
-      if (m_harqOn == true)
-        {
-          std::map <uint16_t, uint8_t>::iterator itProcId;
-          itProcId = m_ulHarqCurrentProcessId.find (uldci.m_rnti);
-          if (itProcId == m_ulHarqCurrentProcessId.end ())
-            {
-              NS_FATAL_ERROR ("No info find in HARQ buffer for UE " << uldci.m_rnti);
-            }
-          harqId = (*itProcId).second;
-          std::map <uint16_t, UlHarqProcessesDciBuffer_t>::iterator itDci = m_ulHarqProcessesDciBuffer.find (uldci.m_rnti);
-          if (itDci == m_ulHarqProcessesDciBuffer.end ())
-            {
-              NS_FATAL_ERROR ("Unable to find RNTI entry in UL DCI HARQ buffer for RNTI " << uldci.m_rnti);
-            }
-          (*itDci).second.at (harqId) = uldci;
-          // Update HARQ process status (RV 0)
-          std::map <uint16_t, UlHarqProcessesStatus_t>::iterator itStat = m_ulHarqProcessesStatus.find (uldci.m_rnti);
-          if (itStat == m_ulHarqProcessesStatus.end ())
-            {
-              NS_LOG_ERROR ("No info find in HARQ buffer for UE (might change eNB) " << uldci.m_rnti);
-            }
-          (*itStat).second.at (harqId) = 0;
-        }
+          
+         uldci.m_mcs = m_amc->GetMcsFromCqi (cqi);
+       } // end 
         
-      NS_LOG_INFO (this << " UL Allocation - UE " << (*it).first << " startPRB " << (uint32_t)uldci.m_rbStart << " nPRB " << (uint32_t)uldci.m_rbLen << " CQI " << cqi << " MCS " << (uint32_t)uldci.m_mcs << " TBsize " << uldci.m_tbSize << " harqId " << (uint16_t)harqId);
+     uldci.m_tbSize = (m_amc->GetUlTbSizeFromMcs (uldci.m_mcs, rbRnti) / 8); // MCS 0 -> UL-AMC TBD
 
+
+     std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itTmpBuffer = allocationMapPerRntiPerLCId.find ((*it).first);
+      if (itTmpBuffer!=allocationMapPerRntiPerLCId.end())
+       {
+        int rbFlow=0;
+        std::map <uint8_t, std::vector <uint16_t> > mapFlow1=itTmpBuffer->second;
+        std::map <uint8_t, std::vector <uint16_t> >::iterator itTmpBuffer2;
+        for (itTmpBuffer2=mapFlow1.begin(); itTmpBuffer2!=mapFlow1.end(); itTmpBuffer2++)
+         {
+           rbFlow=(*itTmpBuffer2).second.size();
+           UpdateUlRlcBufferInfo (uldci.m_rnti, (*itTmpBuffer2).first, (m_amc->GetUlTbSizeFromMcs (uldci.m_mcs, rbFlow) / 8));    
+           //std::cout<<" \t Update UL RLC : rnti = "<<(int)uldci.m_rnti<<" lcid = "<<(int)(*itTmpBuffer2).first<<" bytes = " <<(int)(m_amc->GetUlTbSizeFromMcs (uldci.m_mcs, rbFlow) / 8)<<std::endl;
+         }
+        UETreated.push_back(uldci.m_rnti);
+       }
+  
+     uldci.m_ndi = 1;
+     uldci.m_cceIndex = 0;
+     uldci.m_aggrLevel = 1;
+     uldci.m_ueTxAntennaSelection = 3; // antenna selection OFF
+     uldci.m_hopping = false;
+     uldci.m_n2Dmrs = 0;
+     uldci.m_tpc = 0; // no power control
+     uldci.m_cqiRequest = false; // only period CQI at this stage
+     uldci.m_ulIndex = 0; // TDD parameter
+     uldci.m_dai = 1; // TDD parameter
+     uldci.m_freqHopping = 0;
+     uldci.m_pdcchPowerOffset = 0; // not used
+     ret.m_dciList.push_back (uldci);
+ 
+     RntiAssigned.push_back ((*it).first);
+   
+     // store DCI for HARQ_PERIOD
+     uint8_t harqId = 0;
+     if (m_harqOn == true)
+      {
+        std::map <uint16_t, uint8_t>::iterator itProcId;
+        itProcId = m_ulHarqCurrentProcessId.find (uldci.m_rnti);
+        if (itProcId == m_ulHarqCurrentProcessId.end ())
+          {
+            NS_FATAL_ERROR ("No info find in HARQ buffer for UE " << uldci.m_rnti);
+          }
+        harqId = (*itProcId).second;
+        std::map <uint16_t, UlHarqProcessesDciBuffer_t>::iterator itDci = m_ulHarqProcessesDciBuffer.find (uldci.m_rnti);
+        if (itDci == m_ulHarqProcessesDciBuffer.end ())
+         {
+            NS_FATAL_ERROR ("Unable to find RNTI entry in UL DCI HARQ buffer for RNTI " << uldci.m_rnti);
+         }
+           (*itDci).second.at (harqId) = uldci;
+      } // end if (m_harqOn == true)
+      
       it++;
       if (it == m_ceBsrRxed.end ())
         {
           // restart from the first
           it = m_ceBsrRxed.begin ();
         }
-      if ((rbAllocated == m_cschedCellConfig.m_ulBandwidth) || (rbPerFlow == 0))
-        {
-          // Stop allocation: no more PRBs
-          m_nextRntiUl = (*it).first;
-          break;
-        }
-    }
-  while (((*it).first != m_nextRntiUl)&&(rbPerFlow!=0));
 
-  m_allocationMaps.insert (std::pair <uint16_t, std::vector <uint16_t> > (params.m_sfnSf, rbgAllocationMap));
+      rbRnti=0;
+      itTmp1 = allocationMapPerRntiPerLCId.find ((*it).first);
+      if (itTmp1!=allocationMapPerRntiPerLCId.end())
+       {
+         std::map <uint8_t, std::vector <uint16_t> > mapFlow1=itTmp1->second;
+         std::map <uint8_t, std::vector <uint16_t> >::iterator itTmp2;
+         for (itTmp2=mapFlow1.begin(); itTmp2!=mapFlow1.end(); itTmp2++)
+          {
+            rbRnti=rbRnti+ (*itTmp2).second.size();
+          }
+       }
+      if (RntiAssigned.size()==m_ceBsrRxed.size()) 
+       {
+         // all RNTI are assigned: no need to continue scheduling 
+         m_nextRntiUl = (*it).first;
+         break;
+       }
+    }
+
+  while (((*it).first != m_nextRntiUl) || (rbRnti!=0));
+
+ 
+  m_allocationMaps.insert (std::pair <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > > (params.m_sfnSf, allocationMapPerRntiPerLCId));
 
   m_schedSapUser->SchedUlConfigInd (ret);
+
+  //printf BSR buffer status
+  {
+    std::multimap <uint16_t, std::map <uint8_t, uint32_t> >::iterator bsrIt;
+    for (bsrIt = m_ceBsrRxed.begin() ; bsrIt != m_ceBsrRxed.end () ; bsrIt++)
+      {
+        uint16_t rnti = bsrIt->first;
+        std::map <uint8_t, uint32_t> copyBsrRnti = bsrIt->second;
+        std::map <uint8_t, uint32_t>::iterator lcidIt;
+        for (lcidIt = copyBsrRnti.begin() ; lcidIt != copyBsrRnti.end() ; lcidIt++)
+          {
+            NS_LOG_DEBUG ("BSR2 status: RNTI " << rnti << " LCID " << (uint16_t) lcidIt->first << " BUFFER " << lcidIt->second);
+            //std::cout<<"BSR2 status: RNTI " << (int)rnti << " LCID " << (int) lcidIt->first << " BUFFER " << (int)lcidIt->second<<std::endl;
+            if (lcidIt->second == 0) 
+              {
+                //erase lc information
+                //bsrIt->second.erase (lcidIt->first);
+              }
+          }
+      }
+    //clear up
+    std::multimap <uint16_t, std::map <uint8_t, uint32_t> > cpBsrRxed = m_ceBsrRxed;
+    for (bsrIt = cpBsrRxed.begin() ; bsrIt != cpBsrRxed.end () ; bsrIt++)
+      {
+        if (bsrIt->second.size() == 0)
+          {
+            //no more LCID for this RNTI, remove it
+            //m_ceBsrRxed.erase (bsrIt->first);
+          }
+      }
+  }
+
+  //print allocation map
+   {
+     uint16_t usedRBGs = 0;
+     std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator allocMapRntiIt;
+     for (allocMapRntiIt = allocationMapPerRntiPerLCId.begin() ; allocMapRntiIt != allocationMapPerRntiPerLCId.end(); allocMapRntiIt++) 
+       {
+  //       uint16_t rnti = allocMapRntiIt->first;
+         std::map <uint8_t, std::vector <uint16_t> >::iterator allocMapLcidIt;
+         for (allocMapLcidIt = allocMapRntiIt->second.begin() ; allocMapLcidIt != allocMapRntiIt->second.end() ; allocMapLcidIt++) 
+           {
+  //           uint8_t lcid = allocMapLcidIt->first;
+             usedRBGs += allocMapLcidIt->second.size();
+  //           std::cout << Simulator::Now ().GetSeconds () << " UL ALLOC RNTI " << rnti << " LCID " << (uint16_t) lcid << " RBGs " << allocMapLcidIt->second.size() << std::endl;          
+           }
+       }
+     //std::cout << Simulator::Now ().GetSeconds () << " TOTAL UL USED " << usedRBGs << std::endl;          
+   }
+
   return;
+       
 }
 
 void
@@ -1499,10 +2734,9 @@ RrFfMacScheduler::DoSchedUlSrInfoReq (const struct FfMacSchedSapProvider::SchedU
 void
 RrFfMacScheduler::DoSchedUlMacCtrlInfoReq (const struct FfMacSchedSapProvider::SchedUlMacCtrlInfoReqParameters& params)
 {
+  //std::cout<<" ENTER RrFfMacScheduler::DoSchedUlMacCtrlInfoReq "<<std::endl;
   NS_LOG_FUNCTION (this);
-
-  std::map <uint16_t,uint32_t>::iterator it;
-
+  std::multimap <uint16_t, std::map <uint8_t, uint32_t> >::iterator it;
   for (unsigned int i = 0; i < params.m_macCeList.size (); i++)
     {
       if ( params.m_macCeList.at (i).m_macCeType == MacCeListElement_s::BSR )
@@ -1515,37 +2749,72 @@ RrFfMacScheduler::DoSchedUlMacCtrlInfoReq (const struct FfMacSchedSapProvider::S
           // a total queue size that is used for allocation purposes.
 
           uint32_t buffer = 0;
-          for (uint8_t lcg = 0; lcg < 4; ++lcg)
-            {
-              uint8_t bsrId = params.m_macCeList.at (i).m_macCeValue.m_bufferStatus.at (lcg);
-              buffer += BufferSizeLevelBsr::BsrId2BufferSize (bsrId);
-            }
-
           uint16_t rnti = params.m_macCeList.at (i).m_rnti;
-          it = m_ceBsrRxed.find (rnti);
-          if (it == m_ceBsrRxed.end ())
-            {
-              // create the new entry
-              m_ceBsrRxed.insert ( std::pair<uint16_t, uint32_t > (rnti, buffer));
-              NS_LOG_INFO (this << " Insert RNTI " << rnti << " queue " << buffer);
-            }
-          else
-            {
-              // update the buffer size value
-              (*it).second = buffer;
-              NS_LOG_INFO (this << " Update RNTI " << rnti << " queue " << buffer);
-            }
-        }
-    }
-
-  return;
+          std::map <uint8_t, std::vector <uint8_t> > mapBsr=params.m_macCeList.at (i).m_macCeValue.m_SlBufferStatus;
+          std::map <uint8_t, std::vector <uint8_t> >::iterator itBsr=mapBsr.begin();
+          
+          for (itBsr=mapBsr.begin(); itBsr!=mapBsr.end(); itBsr++)  // modification to handle the new structure of the m_macCeList
+           {  
+             buffer=0;                                                     
+             uint8_t lcId=(*itBsr).first;
+             it = m_ceBsrRxed.find (rnti);
+             if (it == m_ceBsrRxed.end ())
+               { 
+                 //create a new entry 
+                 std::map <uint8_t, uint32_t> BsrTemp;
+                 for (uint8_t lcg = 0; lcg < 4; ++lcg)
+                  {
+                    uint8_t bsrId=(*itBsr).second.at (lcg);
+                    buffer += BufferSizeLevelBsr::BsrId2BufferSize (bsrId);
+                  }
+                 BsrTemp.insert (std::pair <uint8_t, uint32_t> (lcId, buffer));
+                 m_ceBsrRxed.insert (std::pair <uint16_t, std::map <uint8_t, uint32_t> > (rnti,  BsrTemp));
+                 NS_LOG_DEBUG ("BSR Rx RNTI " << rnti << " LCID " << (uint16_t) lcId << " BUFFER " << buffer);
+                 //std::cout<<"\t create new entry bsr , BSR Rx RNTI " << (int) rnti << " LCID " << (int) lcId << " BUFFER " << (int) buffer;
+               }
+              else
+               {
+                 //update the buffer size value
+                  std::map <uint8_t, uint32_t>::iterator itMap;
+                  itMap=it->second.find ((uint8_t)lcId);
+                  if (itMap == it->second.end ())
+                   {
+                      //insert new LC id element 
+                      for (uint8_t lcg = 0; lcg < 4; ++lcg)
+                       {
+                         uint8_t bsrId=(*itBsr).second.at (lcg);  
+                         buffer += BufferSizeLevelBsr::BsrId2BufferSize (bsrId);               
+                       }    
+                      //std::cout<<"\t buffer = "<<(int)buffer<<std::endl;     
+                      it->second.insert (std::pair <uint8_t, uint32_t> (lcId, buffer));
+                      //std::cout<<" insert new lcid in bsr , BSR Rx RNTI " << (int) rnti << " LCID " << (int) lcId << " BUFFER " << (int) buffer;
+                   }
+                  else 
+                   {   
+                     for (uint8_t lcg = 0; lcg < 4; ++lcg) 
+                      {
+                         uint8_t bsrId=(*itBsr).second.at (lcg);
+                         buffer += BufferSizeLevelBsr::BsrId2BufferSize (bsrId);
+                      }  
+                     //std::cout<<"\t buffer = "<<(int)buffer<<std::endl; 
+                     (*itMap).second=buffer;
+                   }   
+                  NS_LOG_DEBUG ("BSR Rx RNTI " << rnti << " LCID " << (uint16_t) lcId << " BUFFER " << buffer); 
+                  //std::cout<<" update  lcid in bsr , BSR Rx RNTI " << (int) rnti << " LCID " << (int) lcId << " BUFFER " << (int) buffer;
+               } // end else 
+           } //end if (it == m_ceBsrRxed.end ())
+        } // end for for (itBsr=mapBsr.begin(); itBsr!=mapBsr.end(); itBsr++)
+    } //end for 
+  return; 
 }
 
 void
 RrFfMacScheduler::DoSchedUlCqiInfoReq (const struct FfMacSchedSapProvider::SchedUlCqiInfoReqParameters& params)
 {
+  //std::cout<<"ENTER DoSchedUlCqiInfoReq " <<std::endl;
   NS_LOG_FUNCTION (this);
-
+  // retrieve the allocation for this subframe
+  
   switch (m_ulCqiFilter)
     {
     case FfMacScheduler::SRS_UL_CQI:
@@ -1571,23 +2840,50 @@ RrFfMacScheduler::DoSchedUlCqiInfoReq (const struct FfMacSchedSapProvider::Sched
     default:
       NS_FATAL_ERROR ("Unknown UL CQI type");
     }
+
   switch (params.m_ulCqi.m_type)
     {
     case UlCqi_s::PUSCH:
       {
-        std::map <uint16_t, std::vector <uint16_t> >::iterator itMap;
+        std::map <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > >::iterator itMap=m_allocationMaps.begin();
         std::map <uint16_t, std::vector <double> >::iterator itCqi;
-        itMap = m_allocationMaps.find (params.m_sfnSf);
-        if (itMap == m_allocationMaps.end ())
+        NS_LOG_DEBUG (this << " Collect PUSCH CQIs of Frame no. " << (params.m_sfnSf >> 4) << " subframe no. " << (0xF & params.m_sfnSf));
+
+        // added code
+        std::map<uint16_t, std::vector <uint16_t> > allocationMap;
+        std::map<uint16_t, std::vector <uint16_t> >::iterator itallocationMap=allocationMap.begin();
+
+        uint16_t snsf=(*itMap).first;
+        std::vector <uint16_t> vTemp;
+
+        std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > mapRntiLcid = itMap->second;
+        std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > >::iterator itmapRntiLcid;
+        for (itmapRntiLcid=mapRntiLcid.begin(); itmapRntiLcid!= mapRntiLcid.end(); itmapRntiLcid++)
+         {
+           std::map <uint8_t, std::vector <uint16_t> > mapLcid=itmapRntiLcid->second;
+           std::map <uint8_t, std::vector <uint16_t> >::iterator itLcid;
+           for (itLcid=mapLcid.begin(); itLcid!=mapLcid.end(); itLcid ++)
+            {
+              vTemp.push_back ((*itmapRntiLcid).first);
+            }
+         }
+         
+        allocationMap.insert ( std::pair <uint16_t, std::vector <uint16_t> > (snsf, vTemp));
+        vTemp.clear();
+        itallocationMap = allocationMap.find (params.m_sfnSf);
+        if (itallocationMap == allocationMap.end ())
           {
-            NS_LOG_INFO (this << " Does not find info on allocation, size : " << m_allocationMaps.size ());
             return;
           }
-        for (uint32_t i = 0; i < (*itMap).second.size (); i++)
+ 
+        bool s_found=false;
+
+        for (uint32_t i = 0; i < (*itallocationMap).second.size(); i++)
           {
+            s_found=true;
             // convert from fixed point notation Sxxxxxxxxxxx.xxx to double
             double sinr = LteFfConverter::fpS11dot3toDouble (params.m_ulCqi.m_sinr.at (i));
-            itCqi = m_ueCqi.find ((*itMap).second.at (i));
+            itCqi = m_ueCqi.find ((*itallocationMap).second.at (i));
             if (itCqi == m_ueCqi.end ())
               {
                 // create a new entry
@@ -1601,32 +2897,32 @@ RrFfMacScheduler::DoSchedUlCqiInfoReq (const struct FfMacSchedSapProvider::Sched
                     else
                       {
                         // initialize with NO_SINR value.
-                        newCqi.push_back (30.0);
+                        newCqi.push_back (NO_SINR);
                       }
-
                   }
-                m_ueCqi.insert (std::pair <uint16_t, std::vector <double> > ((*itMap).second.at (i), newCqi));
+                m_ueCqi.insert (std::pair <uint16_t, std::vector <double> > ((*itallocationMap).second.at (i), newCqi));
                 // generate correspondent timer
-                m_ueCqiTimers.insert (std::pair <uint16_t, uint32_t > ((*itMap).second.at (i), m_cqiTimersThreshold));
+                m_ueCqiTimers.insert (std::pair <uint16_t, uint32_t > ((*itallocationMap).second.at (i), m_cqiTimersThreshold));
               }
             else
               {
                 // update the value
                 (*itCqi).second.at (i) = sinr;
+                NS_LOG_DEBUG (this << " RNTI " << (*itallocationMap).second.at (i) << " RB " << i << " SINR " << sinr);
                 // update correspondent timer
                 std::map <uint16_t, uint32_t>::iterator itTimers;
-                itTimers = m_ueCqiTimers.find ((*itMap).second.at (i));
+                itTimers = m_ueCqiTimers.find ((*itallocationMap).second.at (i));
                 (*itTimers).second = m_cqiTimersThreshold;
-
               }
-
           }
         // remove obsolete info on allocation
+        if (s_found==true)
         m_allocationMaps.erase (itMap);
       }
       break;
     case UlCqi_s::SRS:
       {
+        NS_LOG_DEBUG (this << " Collect SRS CQIs of Frame no. " << (params.m_sfnSf >> 4) << " subframe no. " << (0xF & params.m_sfnSf));
         // get the RNTI from vendor specific parameters
         uint16_t rnti = 0;
         NS_ASSERT (params.m_vendorSpecificList.size () > 0);
@@ -1649,7 +2945,6 @@ RrFfMacScheduler::DoSchedUlCqiInfoReq (const struct FfMacSchedSapProvider::Sched
                 double sinr = LteFfConverter::fpS11dot3toDouble (params.m_ulCqi.m_sinr.at (j));
                 newCqi.push_back (sinr);
                 NS_LOG_INFO (this << " RNTI " << rnti << " new SRS-CQI for RB  " << j << " value " << sinr);
-
               }
             m_ueCqi.insert (std::pair <uint16_t, std::vector <double> > (rnti, newCqi));
             // generate correspondent timer
@@ -1668,17 +2963,14 @@ RrFfMacScheduler::DoSchedUlCqiInfoReq (const struct FfMacSchedSapProvider::Sched
             std::map <uint16_t, uint32_t>::iterator itTimers;
             itTimers = m_ueCqiTimers.find (rnti);
             (*itTimers).second = m_cqiTimersThreshold;
-
           }
-
-
       }
       break;
     case UlCqi_s::PUCCH_1:
     case UlCqi_s::PUCCH_2:
     case UlCqi_s::PRACH:
       {
-        NS_FATAL_ERROR ("PfFfMacScheduler supports only PUSCH and SRS UL-CQIs");
+        NS_FATAL_ERROR ("MtFfMacScheduler supports only PUSCH and SRS UL-CQIs");
       }
       break;
     default:
@@ -1752,79 +3044,98 @@ RrFfMacScheduler::RefreshUlCqiMaps (void)
 void
 RrFfMacScheduler::UpdateDlRlcBufferInfo (uint16_t rnti, uint8_t lcid, uint16_t size)
 {
-  NS_LOG_FUNCTION (this);
-  std::list<FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it;
-  for (it = m_rlcBufferReq.begin (); it != m_rlcBufferReq.end (); it++)
+  //std::cout<<" ENTER RrFfMacScheduler::UpdateDlRlcBufferInfo "<<std::endl;
+  //std::cout<<" \t rnti = "<<(int)rnti <<" lcid = " <<(int)lcid <<" tb size = "<<(int) size <<std::endl;
+  std::map<LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters>::iterator it;
+  LteFlowId_t flow (rnti, lcid);
+  it = m_rlcBufferReq.find (flow);
+  if (it != m_rlcBufferReq.end ())
     {
-      if (((*it).m_rnti == rnti) && ((*it).m_logicalChannelIdentity == lcid))
-        {
-          NS_LOG_INFO (this << " UE " << rnti << " LC " << (uint16_t)lcid << " txqueue " << (*it).m_rlcTransmissionQueueSize << " retxqueue " << (*it).m_rlcRetransmissionQueueSize << " status " << (*it).m_rlcStatusPduSize << " decrease " << size);
-          // Update queues: RLC tx order Status, ReTx, Tx
-          // Update status queue
-           if (((*it).m_rlcStatusPduSize > 0) && (size >= (*it).m_rlcStatusPduSize))
-              {
-                (*it).m_rlcStatusPduSize = 0;
-              }
-            else if (((*it).m_rlcRetransmissionQueueSize > 0) && (size >= (*it).m_rlcRetransmissionQueueSize))
-              {
-                (*it).m_rlcRetransmissionQueueSize = 0;
-              }
-            else if ((*it).m_rlcTransmissionQueueSize > 0)
-              {
-                uint32_t rlcOverhead;
-                if (lcid == 1)
-                  {
-                    // for SRB1 (using RLC AM) it's better to
-                    // overestimate RLC overhead rather than
-                    // underestimate it and risk unneeded
-                    // segmentation which increases delay 
-                    rlcOverhead = 4;                                  
-                  }
-                else
-                  {
-                    // minimum RLC overhead due to header
-                    rlcOverhead = 2;
-                  }
-                // update transmission queue
-                if ((*it).m_rlcTransmissionQueueSize <= size - rlcOverhead)
-                  {
-                    (*it).m_rlcTransmissionQueueSize = 0;
-                  }
-                else
-                  {                    
-                    (*it).m_rlcTransmissionQueueSize -= size - rlcOverhead;
-                  }
-              }
-          return;
-        }
-    }
-}
+      NS_LOG_INFO (this << " UE " << rnti << " LC " << (uint16_t)lcid << " txqueue " << (*it).second.m_rlcTransmissionQueueSize << " retxqueue " << (*it).second.m_rlcRetransmissionQueueSize << " status " << (*it).second.m_rlcStatusPduSize << " decrease " << size);
 
-void
-RrFfMacScheduler::UpdateUlRlcBufferInfo (uint16_t rnti, uint16_t size)
-{
+      //std::cout << " UE " << rnti << " LC " << (int)lcid << " txqueue " << (int) (*it).second.m_rlcTransmissionQueueSize << " retxqueue " << (int)(*it).second.m_rlcRetransmissionQueueSize << " status " << (int)(*it).second.m_rlcStatusPduSize << " decrease " << (int) size << std::endl;
 
-  size = size - 2; // remove the minimum RLC overhead
-  std::map <uint16_t,uint32_t>::iterator it = m_ceBsrRxed.find (rnti);
-  if (it != m_ceBsrRxed.end ())
-    {
-      NS_LOG_INFO (this << " Update RLC BSR UE " << rnti << " size " << size << " BSR " << (*it).second);
-      if ((*it).second >= size)
+      // Update queues: RLC tx order Status, ReTx, Tx
+      // Update status queue
+      if (((*it).second.m_rlcStatusPduSize > 0) && (size >= (*it).second.m_rlcStatusPduSize))
         {
-          (*it).second -= size;
+          (*it).second.m_rlcStatusPduSize = 0;
         }
-      else
+      else if (((*it).second.m_rlcRetransmissionQueueSize > 0) && (size >= (*it).second.m_rlcRetransmissionQueueSize))
         {
-          (*it).second = 0;
+          (*it).second.m_rlcRetransmissionQueueSize = 0;
+        }
+      else if ((*it).second.m_rlcTransmissionQueueSize > 0)
+        {
+          uint32_t rlcOverhead;
+          if (lcid == 1)
+            {
+              // for SRB1 (using RLC AM) it's better to
+              // overestimate RLC overhead rather than
+              // underestimate it and risk unneeded
+              // segmentation which increases delay 
+              rlcOverhead = 4;
+            }
+          else
+            {
+              // minimum RLC overhead due to header
+              rlcOverhead = 2;
+            }
+          // update transmission queue
+          if ((*it).second.m_rlcTransmissionQueueSize <= size - rlcOverhead)
+            {
+              (*it).second.m_rlcTransmissionQueueSize = 0;
+            }
+          else
+            {
+              (*it).second.m_rlcTransmissionQueueSize -= size - rlcOverhead;
+            }
         }
     }
   else
     {
-      NS_LOG_ERROR (this << " Does not find BSR report info of UE " << rnti);
+      NS_LOG_ERROR (this << " Does not find DL RLC Buffer Report of UE " << rnti);
     }
-
 }
 
+
+void
+RrFfMacScheduler::UpdateUlRlcBufferInfo (uint16_t rnti, uint8_t lcid, uint16_t size)
+{
+
+  size = size - 2; // remove the minimum RLC overhead
+  std::multimap <uint16_t, std::map <uint8_t, uint32_t> >::iterator it=m_ceBsrRxed.find (rnti);
+  
+  if (it != m_ceBsrRxed.end ())
+    {
+      std::map <uint8_t, uint32_t>::iterator itMap=it->second.find (lcid);
+      if (itMap!=it->second.end())
+       {
+         NS_LOG_INFO (this << " UE " << rnti << " lcid "<< (uint16_t) lcid << " size " << size << " BSR " << (*itMap).second);
+         //std::cout<<"\t UE " << (int) rnti << " lcid "<< (int)lcid << " size " << (int) size << " BSR " << (int) (*itMap).second<<std::endl;
+         if ((*itMap).second >= size)
+          {
+            (*itMap).second -= size;
+            //std::cout<<"\t updated data in m_bsr =" <<(int)(*itMap).second<<std::endl;
+          }
+         else
+          {
+            (*itMap).second = 0;
+            //std::cout<<"\t updated data in m_bsr =" <<(int)(*itMap).second<<std::endl;
+          }
+       }
+      else 
+       {
+         NS_LOG_ERROR (this << " Does not find BSR report info of UE LCID " << lcid);
+         //std::cout<<" \t LCID not found in m_bsr "<<std::endl;
+       }
+    }  
+  else
+    {
+      //std::cout<<"\t error : Does not find BSR report info of UE"<<std::endl;
+      NS_LOG_ERROR (this << " Does not find BSR report info of UE " << rnti);
+    }
+}
 
 void
 RrFfMacScheduler::TransmissionModeConfigurationUpdate (uint16_t rnti, uint8_t txMode)

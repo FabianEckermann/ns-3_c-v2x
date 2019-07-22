@@ -18,6 +18,7 @@
  * Author: Jaume Nin <jnin@cttc.es>
  *         Nicola Baldo <nbaldo@cttc.es>
  *         Manuel Requena <manuel.requena@cttc.es>
+ * Modified by: NIST
  */
 
 #ifndef EPC_HELPER_H
@@ -29,6 +30,7 @@
 #include <ns3/data-rate.h>
 #include <ns3/epc-tft.h>
 #include <ns3/eps-bearer.h>
+#include <ns3/lte-sl-tft.h>
 
 namespace ns3 {
 
@@ -111,6 +113,38 @@ public:
    */
   virtual uint8_t ActivateEpsBearer (Ptr<NetDevice> ueLteDevice, uint64_t imsi, Ptr<EpcTft> tft, EpsBearer bearer) = 0;
 
+  /**
+   * Activate a sidelink bearer
+   *
+   * \param ueDevice The device of the UE
+   * \param tft The traffic flow template for the new bearer
+   */
+  virtual void ActivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft) = 0;
+
+  /**
+   * Deactivate a sidelink bearer
+   *
+   * \param ueDevice The device of the UE
+   * \param tft The traffic flow template for the bearer to remove
+   */
+  virtual void DeactivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft) = 0;
+
+  /**
+   *  Activate discovery for one UE for given applications
+   *
+   * \param ueDevice the UE device
+   * \param apps the applications to start
+   * \param rxtx the interest in monitoring or announcing (0 for rx and 1 for tx)
+   */
+  virtual void StartDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx) = 0;
+
+  /**
+   *  Deactivate discovery for one UE for given applications
+   *  \param ueDevice the UE device
+   *  \param apps the applications to stop
+   *  \param rxtx the interest in monitoring or announcing (0 for rx and 1 for tx)
+   */
+  virtual void StopDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx) = 0;
 
   /** 
    * 

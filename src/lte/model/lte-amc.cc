@@ -18,6 +18,7 @@
  * Original Author: Giuseppe Piro  <g.piro@poliba.it>
  * Modified by:     Marco Miozzo   <mmiozzo@cttc.es>
  *                  Nicola Baldo   <nbaldo@cttc.es>
+ *                  NIST (D2D)
  */
 
 
@@ -256,7 +257,8 @@ LteAmc::GetTypeId (void)
                  EnumValue (LteAmc::MiErrorModel),
                  MakeEnumAccessor (&LteAmc::m_amcModel),
                  MakeEnumChecker (LteAmc::MiErrorModel, "Vienna",
-                                  LteAmc::PiroEW2010, "PiroEW2010"));
+                                  LteAmc::PiroEW2010, "PiroEW2010",
+                                  LteAmc::NistErrorModel, "Nist"));
   return tid;
 }
 
@@ -426,6 +428,11 @@ LteAmc::CreateCqiFeedbacks (const SpectrumValue& sinr, uint8_t rbgSize)
         
       }
       
+    }
+  else if (m_amcModel == NistErrorModel)
+    {
+      NS_LOG_DEBUG (this << " AMC-NIST RBG size " << (uint16_t)rbgSize);
+      NS_FATAL_ERROR ("AMC-NIST not supported yet");
     }
 
   return cqi;

@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo  <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 
@@ -39,10 +40,11 @@ namespace ns3 {
 /// HarqProcessInfoElement_t structure
 struct HarqProcessInfoElement_t
 {
-   double m_mi; ///< MI
-   uint8_t m_rv; ///< RV
-   uint16_t m_infoBits; ///< info bits
-   uint16_t m_codeBits; ///< code bits
+  double m_mi; ///< MI
+  uint8_t m_rv; ///< RV
+  uint16_t m_infoBits; ///< info bits
+  uint16_t m_codeBits; ///< code bits
+  double m_sinr; //effective mean SINR for the transmission
 };
 
 typedef std::vector <HarqProcessInfoElement_t> HarqProcessInfoList_t; ///< HarqProcessInfoList_t typedef 
@@ -58,6 +60,8 @@ class LteHarqPhy : public SimpleRefCount<LteHarqPhy>
 public:
   LteHarqPhy ();
   ~LteHarqPhy ();
+
+  void SetDiscNumRetx (uint8_t retx);
 
   /**
   * \brief Subframe Indication function
@@ -113,6 +117,15 @@ public:
   void UpdateDlHarqProcessStatus (uint8_t id, uint8_t layer, double mi, uint16_t infoBytes, uint16_t codeBytes);
 
   /**
+  * \brief Update the Info associated to the decodification of an HARQ process
+  * for DL (asynchronous)
+  * \param id the HARQ proc id
+  * \param layer layer no. (for MIMO spatail multiplexing)
+  * \param sinr the new SINR
+  */
+  void UpdateDlHarqProcessStatus (uint8_t id, uint8_t layer, double sinr);
+
+  /**
   * \brief Reset the info associated to the decodification of an HARQ process
   * for DL (asynchronous)
   * \param id the HARQ proc id
@@ -130,6 +143,14 @@ public:
   void UpdateUlHarqProcessStatus (uint16_t rnti, double mi, uint16_t infoBytes, uint16_t codeBytes);
 
   /**
+  * \brief Update the mean SINR value associated to the decodification of an HARQ process
+  * for UL
+  * \param rnti the RNTI of the transmitter
+  * \param sinr the new SINR
+  */
+  void UpdateUlHarqProcessStatus (uint16_t rnti, double sinr);
+
+  /**
   * \brief Reset  the info associated to the decodification of an HARQ process
   * for DL (asynchronous)
   * \param rnti the RNTI of the transmitter
@@ -137,16 +158,114 @@ public:
   */
   void ResetUlHarqProcessStatus(uint16_t rnti, uint8_t id);
   
+  /**
+  * \brief Return the cumulated MI of the HARQ procId in case of retranmissions
+  * for SL
+  * \param rnti The UE identifier
+  * \param l1dst The layer 1 destination ID 
+  * \return the MI accumulated
+  */
+  double GetAccumulatedMiSl (uint16_t rnti, uint8_t l1dst);
+
+  /**
+  * \brief Return the info of the HARQ procId in case of retranmissions
+  * for SL 
+  * \param rnti the RNTI of the transmitter
+  * \param l1dst The layer 1 destination ID 
+  * \return the vector of the info related to HARQ proc Id
+  */
+  HarqProcessInfoList_t GetHarqProcessInfoSl (uint16_t rnti, uint8_t l1dst);
+
+  /**
+  * \brief Return the info of the HARQ procId in case of retranmissions
+  * for SL 
+  * \param rnti the RNTI of the transmitter
+  * \return the vector of the info related to HARQ proc Id
+  */
+  HarqProcessInfoList_t GetHarqProcessInfoSlV2X (uint16_t rnti);
+ 
+  /**
+  * \brief Return the info of the HARQ procId in case of retranmissions
+  * for d2d discovery
+  * \param rnti the RNTI of the transmitter
+  * \param resPsdch The resource used
+  * \return the vector of the info related to HARQ proc Id
+  */
+  HarqProcessInfoList_t GetHarqProcessInfoDisc (uint16_t rnti, uint8_t resPsdch);
+
+  /**
+  * \brief Update the MI value associated to the decodification of an HARQ process
+  * for SL 
+  * \param rnti the RNTI of the transmitter
+  * \param l1dst the layer 1 destination ID
+  * \param mi the new MI
+  * \param infoBytes the no. of bytes of info
+  * \param mi the total no. of bytes txed
+  */
+  void UpdateSlHarqProcessStatus (uint16_t rnti, uint8_t l1dst, double mi, uint16_t infoBytes, uint16_t codeBytes);
+
+  /**
+  * \brief Update the SINR value associated to the decodification of an HARQ process
+  * for SL 
+  * \param rnti the RNTI of the transmitter
+  * \param l1dst the layer 1 destination ID
+  * \param sinr the new SINR
+  */
+  void UpdateSlHarqProcessStatus (uint16_t rnti, uint8_t l1dst, double sinr);
+
+  /**
+  * \brief Update the MI value associated to the decodification of an HARQ process
+  * for SL 
+  * \param rnti the RNTI of the transmitter
+  * \param mi the new MI
+  * \param infoBytes the no. of bytes of info
+  * \param mi the total no. of bytes txed
+  */
+  void UpdateSlV2XHarqProcessStatus (uint16_t rnti, double mi, uint16_t infoBytes, uint16_t codeBytes);
+
+  /**
+  * \brief Update the SINR value associated to the decodification of an HARQ process
+  * for SL 
+  * \param rnti the RNTI of the transmitter
+  * \param sinr the new SINR
+  */
+  void UpdateSlV2XHarqProcessStatus (uint16_t rnti, double sinr);
+
+  /**
+  * \brief Update the MI value associated to the decodification of an HARQ process
+  * for DL (asynchronous)
+  * \param rnti the RNTI of the transmitter
+  * \param resPsdch resource used
+  * \param sinr the new SINR
+  */
+  void UpdateDiscHarqProcessStatus (uint16_t rnti, uint8_t resPsdch, double sinr);
+
+  /**
+  * \brief Reset  the info associated to the decodification of an HARQ process
+  * for SL 
+  * \param id the HARQ proc id
+  * \param l1dst the layer 1 destination ID
+  */
+  void ResetSlHarqProcessStatus(uint16_t rnti, uint8_t ls1dst);
   
-  
+  /**
+  * \brief Reset  the info associated to the decodification of an HARQ process
+  * \param rnti rnti of the transmitter
+  * \param resPsdch resource used
+  */
+  void ResetDiscHarqProcessStatus(uint16_t rnti, uint8_t resPsdch);
 
 
 private:
 
   std::vector <std::vector <HarqProcessInfoList_t> > m_miDlHarqProcessesInfoMap; ///< MI DL HARQ processes info map
   std::map <uint16_t, std::vector <HarqProcessInfoList_t> > m_miUlHarqProcessesInfoMap; ///< MI UL HARQ processes info map
+  std::map <uint16_t, std::map <uint8_t , HarqProcessInfoList_t> > m_miSlHarqProcessesInfoMap;
+  std::map <uint16_t, HarqProcessInfoList_t> m_miSlV2XHarqProcessesInfoMap;
+  std::map <uint16_t, std::map <uint8_t , HarqProcessInfoList_t> > m_miDiscHarqProcessesInfoMap;  
+    
+  uint8_t m_discNumRetx;
   
-
 };
 
 

@@ -17,6 +17,9 @@
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
+ *              Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *              Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 #ifndef LTE_COMMON_H
 #define LTE_COMMON_H
@@ -223,6 +226,8 @@ struct PhyReceptionStatParameters
   uint8_t  m_ndi;          ///< new data indicator flag
   uint8_t  m_correctness;  ///< correctness of the TB received
   uint8_t  m_ccId;        ///< component carrier id
+  //Aziza
+  double m_sinrPerRb; ///< linear average SINR per RB
 
   /**
    *  TracedCallback signature.
@@ -231,6 +236,65 @@ struct PhyReceptionStatParameters
    * \todo The argument should be passed by const reference, since it's large.
    */
   typedef void (* TracedCallback)(const PhyReceptionStatParameters params);
+  
+};
+
+struct SlUeMacStatParameters
+{
+  int64_t  m_timestamp;    ///< in millisecond
+  uint16_t m_cellId;       ///< Cell ID of the attached Enb
+  uint64_t m_imsi;         ///< IMSI of the scheduled UE
+  uint16_t m_rnti;         ///< C-RNTI scheduled
+  uint32_t m_frameNo;       ///< the frame number
+  uint32_t m_subframeNo;   ///< the subframe number
+  uint8_t  m_mcs;          ///< MCS for transport block
+  uint16_t m_tbSize;       ///< Size of transport block in bytes
+  uint16_t m_pscchRi;      ///< PSCCH resource index
+  //uint16_t m_pscchTx1;     ///< PSCCH 1st transmission sf
+  //uint16_t m_pscchTx2;     ///< PSCCH 2nd transmission sf
+  uint32_t m_pscchFrame1;    ///< PSCCH 1st transmission frame number
+  uint32_t m_pscchSubframe1; ///< PSCCH 1st transmission subframe number
+  uint32_t m_pscchFrame2;    ///< PSCCH 2st transmission frame number
+  uint32_t m_pscchSubframe2; ///< PSCCH 2st transmission subframe number
+  uint16_t m_psschTxStartRB;   ///< PSSCH transmission start RB
+  uint16_t m_psschTxLengthRB;  ///< PSSCH transmission length RB
+  uint16_t m_psschItrp;   ///< PSSCH I_TRP
+  uint32_t m_psschFrame;    ///< PSSCH frame used to transmitt
+  uint32_t m_psschSubframe;    ///< PSSCH subframe used to transmitt
+  uint32_t m_psschFrameStart;    ///< PSSCH frame start
+  uint32_t m_psschSubframeStart;    ///< PSSCH frame start
+
+  /**
+   *  TracedCallback signature.
+   *
+   * \param [in] params Value of the SlUeMacStatParameters.
+   */
+  typedef void (* TracedCallback)(const SlUeMacStatParameters params);
+  
+};
+
+struct SlUeMacStatParametersV2x
+{
+  int64_t  m_timestamp;    ///< in millisecond
+  uint16_t m_cellId;       ///< Cell ID of the attached Enb
+  uint64_t m_imsi;         ///< IMSI of the scheduled UE
+  uint16_t m_rnti;         ///< C-RNTI scheduled
+  uint32_t m_frameNo;      ///< the frame number
+  uint32_t m_subframeNo;   ///< the subframe number
+  uint8_t  m_mcs;          ///< MCS for transport block
+  uint16_t m_tbSize;       ///< Size of transport block in bytes
+  uint8_t m_resPscch;       ///< Resource of PSCCH 
+  uint32_t m_txFrame;      
+  uint32_t m_txSubframe;
+  uint16_t m_psschTxStartRB;   ///< PSSCH transmission start RB
+  uint16_t m_psschTxLengthRB;  ///< PSSCH transmission length RB
+
+  /**
+   *  TracedCallback signature.
+   *
+   * \param [in] params Value of the SlUeMacStatParameters.
+   */
+  typedef void (* TracedCallback)(const SlUeMacStatParametersV2x params);
   
 };
 

@@ -80,6 +80,10 @@ public:
   virtual void AddUe (Ptr<NetDevice> ueLteDevice, uint64_t imsi);
   virtual void AddX2Interface (Ptr<Node> enbNode1, Ptr<Node> enbNode2);
   virtual uint8_t ActivateEpsBearer (Ptr<NetDevice> ueLteDevice, uint64_t imsi, Ptr<EpcTft> tft, EpsBearer bearer);
+  virtual void ActivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft);
+  virtual void DeactivateSidelinkBearer (Ptr<NetDevice> ueDevice, Ptr<LteSlTft> tft);
+  virtual void StartDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx);
+  virtual void StopDiscovery (Ptr<NetDevice> ueDevice, std::list<uint32_t> apps, bool rxtx);
   virtual Ptr<Node> GetPgwNode ();
   virtual Ipv4InterfaceContainer AssignUeIpv4Address (NetDeviceContainer ueDevices);
   Ipv6InterfaceContainer AssignUeIpv6Address (NetDeviceContainer ueDevices);
@@ -118,6 +122,13 @@ private:
    * MME network element
    */
   Ptr<EpcMme> m_mme;
+
+  /**
+   * Helper which provides implementation of core network. Initially empty
+   * (i.e., LTE-only simulation without any core network) and then might be
+   * set using SetEpcHelper().
+   */
+  Ptr<EpcHelper> m_epcHelper;
 
   /** 
    * helper to assign addresses to S1-U NetDevices 

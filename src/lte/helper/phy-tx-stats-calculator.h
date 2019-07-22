@@ -18,6 +18,7 @@
  * Author: Jaume Nin <jnin@cttc.es>
  * modified by: Marco Miozzo <mmiozzo@cttc.es>
  *        Convert MacStatsCalculator in PhyTxStatsCalculator
+ *              NIST
  */
 
 #ifndef PHY_TX_STATS_CALCULATOR_H_
@@ -94,6 +95,19 @@ public:
   std::string GetDlTxOutputFilename (void);
 
   /**
+   * Set the name of the file where the SL TX PHY statistics will be stored.
+   *
+   * @param outputFilename string with the name of the file
+   */
+  void SetSlTxOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the SL TX PHY statistics will be stored.
+   * @return the name of the file where the SL TX PHY statistics will be stored
+   */
+  std::string GetSlTxOutputFilename (void);
+
+  /**
    * Notifies the stats calculator that an downlink transmission has occurred.
    * @param params Trace information regarding PHY transmission stats
    */
@@ -104,6 +118,12 @@ public:
    * @param params Trace information regarding PHY transmission stats
    */
   void UlPhyTransmission (PhyTransmissionStatParameters params);
+
+  /**
+   * Notifies the stats calculator that a sidelink trasmission has occurred.
+   * @param params Trace information regarding PHY transmission stats
+   */
+  void SlPhyTransmission (PhyTransmissionStatParameters params);
 
   
   /** 
@@ -126,6 +146,17 @@ public:
   static void UlPhyTransmissionCallback (Ptr<PhyTxStatsCalculator> phyTxStats,
                                   std::string path, PhyTransmissionStatParameters params);
 
+  /** 
+   * trace sink
+   * 
+   * \param phyTxStats 
+   * \param path 
+   * \param params 
+   */
+  static void SlPhyTransmissionCallback (Ptr<PhyTxStatsCalculator> phyTxStats,
+                                  std::string path, PhyTransmissionStatParameters params);
+
+
 private:
   /**
    * When writing DL TX PHY statistics first time to file,
@@ -142,6 +173,14 @@ private:
    * files have not been opened yet
    */
   bool m_ulTxFirstWrite;
+
+  /**
+   * When writing SL TX PHY statistics first time to file,
+   * columns description is added. Then next lines are
+   * appended to file. This value is true if output
+   * files have not been opened yet
+   */
+  bool m_slTxFirstWrite;
 
 };
 

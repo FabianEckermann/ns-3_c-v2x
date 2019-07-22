@@ -17,12 +17,14 @@
  *
  * Author: Jaume Nin <jnin@cttc.es>
  * Modified by: Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
- *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation) 
+ *              Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *              NIST (D2D)
  */
 
 #ifndef MAC_STATS_CALCULATOR_H_
 #define MAC_STATS_CALCULATOR_H_
 
+#include "ns3/lte-common.h"
 #include "ns3/lte-stats-calculator.h"
 #include "ns3/nstime.h"
 #include "ns3/uinteger.h"
@@ -92,6 +94,32 @@ public:
   std::string GetDlOutputFilename (void);
 
   /**
+   * Set the name of the file where the sidelink ue mac statistics will be stored.
+   *
+   * \param outputFilename string with the name of the file
+   */
+  void SetSlUeOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the sidelink ue mac statistics will be stored.
+   * @return the name of the file where the sidelink statistics will be stored
+   */
+  std::string GetSlUeOutputFilename (void);
+
+  /**
+   * Set the name of the file where the sidelink shared channel ue mac statistics will be stored.
+   *
+   * \param outputFilename string with the name of the file
+   */
+  void SetSlSchUeOutputFilename (std::string outputFilename);
+
+  /**
+   * Get the name of the file where the sidelink shared channel ue mac statistics will be stored.
+   * @return the name of the file where the sidelink statistics will be stored
+   */
+  std::string GetSlSchUeOutputFilename (void);
+
+  /**
    * Notifies the stats calculator that an downlink scheduling has occurred.
    * @param cellId Cell ID of the attached Enb
    * @param imsi IMSI of the scheduled UE
@@ -122,7 +150,17 @@ public:
   void UlScheduling (uint16_t cellId, uint64_t imsi,uint32_t frameNo, uint32_t subframeNo,
                      uint16_t rnti, uint8_t mcsTb, uint16_t sizeTb, uint8_t componentCarrierId);
 
+  /**
+  * Notifies the stats calculator that a sidelink ue mac scheduling has occurred.
+  */
+  void SlUeScheduling (SlUeMacStatParameters params);
   
+  /**
+  * Notifies the stats calculator that a sidelink shared channel ue mac scheduling has occurred.
+  */
+  void SlSharedChUeScheduling (SlUeMacStatParameters params);
+
+
   /** 
    * Trace sink for the ns3::LteEnbMac::DlScheduling trace source
    * 
@@ -148,6 +186,16 @@ public:
                              uint32_t frameNo, uint32_t subframeNo, uint16_t rnti,
                              uint8_t mcs, uint16_t size, uint8_t componentCarrierId);
 
+  /** 
+   * Trace sink for the ns3::LteEnbMac::DlScheduling trace source
+   */
+  static void SlUeSchedulingCallback (Ptr<MacStatsCalculator> macStats, std::string path, SlUeMacStatParameters params);
+
+  /** 
+   * Trace sink for the ns3::LteEnbMac::DlScheduling trace source
+   */
+  static void SlSharedChUeSchedulingCallback (Ptr<MacStatsCalculator> macStats, std::string path, SlUeMacStatParameters params);
+
 
 private:
   /**
@@ -165,6 +213,22 @@ private:
    * files have not been opened yet
    */
   bool m_ulFirstWrite;
+
+  /**
+   * When writing SL UE MAC statistics first time to file,
+   * columns description is added. Then next lines are
+   * appended to file. This value is true if output
+   * files have not been opened yet
+   */
+  bool m_slUeFirstWrite;
+
+  /**
+   * When writing SL Shared Channel UE MAC statistics first time to file,
+   * columns description is added. Then next lines are
+   * appended to file. This value is true if output
+   * files have not been opened yet
+   */
+  bool m_slSchUeFirstWrite;
 
 };
 

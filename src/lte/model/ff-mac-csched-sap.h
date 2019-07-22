@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Manuel Requena <manuel.requena@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef FF_MAC_CSCHED_SAP_H
@@ -25,6 +26,7 @@
 #include <vector>
 
 #include "ff-mac-common.h"
+#include "sl-pool.h"
 
 namespace ns3 {
 
@@ -193,6 +195,8 @@ public:
     uint8_t   m_ackNackRepetitionFactor; ///< ackNackRepetitionFactor
 
     std::vector <struct VendorSpecificListElement_s> m_vendorSpecificList; ///< vendorSpecificList
+
+    std::vector <uint32_t> m_slDestinations;
   };
 
   /**
@@ -231,6 +235,24 @@ public:
     uint16_t  m_rnti; ///< RNTI
 
     std::vector <struct VendorSpecificListElement_s> m_vendorSpecificList; ///< vendorSpecificList
+  };
+
+  /**
+   * Parameters to setup a pool
+   */
+  struct CschedPoolConfigReqParameters
+  {
+    uint32_t m_group;
+
+    Ptr<SidelinkCommResourcePool> m_pool;
+  };
+  
+  /**
+   * Parameters to setup a pool
+   */
+  struct CschedPoolReleaseReqParameters
+  {
+    uint32_t m_group;
   };
 
   //
@@ -272,6 +294,22 @@ public:
    * \param params CschedUeReleaseReqParameters
    */
   virtual void CschedUeReleaseReq (const struct CschedUeReleaseReqParameters& params) = 0;
+
+//we are not making those function purely virtual so not all schedulers need to support them
+  /**
+   * \brief CSCHED_POOL_CONFIG_REQ
+   *
+   * \param params CschedPoolReleaseReqParameters
+   */
+  virtual void CschedPoolConfigReq (const struct CschedPoolConfigReqParameters& params) {};
+  
+  /**
+   * \brief CSCHED_POOL_RELEASE_REQ
+   *
+   * \param params CschedPoolReleaseReqParameters
+   */
+  virtual void CschedPoolReleaseReq (const struct CschedPoolReleaseReqParameters& params) {};
+
 
 private:
 };

@@ -53,6 +53,8 @@ def build(bld):
         'helper/radio-environment-map-helper.cc',
         'helper/lte-hex-grid-enb-topology-helper.cc',
         'helper/lte-global-pathloss-database.cc',
+        'helper/lte-prose-helper.cc',
+        'helper/lte-v2x-helper.cc',
         'model/rem-spectrum-phy.cc',
         'model/ff-mac-common.cc',
         'model/ff-mac-csched-sap.cc',
@@ -131,7 +133,27 @@ def build(bld):
         'model/component-carrier.cc',
         'helper/cc-helper.cc',
         'model/component-carrier-ue.cc',
-        'model/component-carrier-enb.cc'
+        'model/component-carrier-enb.cc',
+        'model/lte-sl-tft.cc',
+        'model/sl-pool.cc',
+        'model/sl-pool-factory.cc',
+        'model/sl-resource-pool-factory.cc',
+        'model/sl-v2x-resource-pool-factory.cc',
+        'model/sl-preconfig-pool-factory.cc',
+        'model/sl-v2x-preconfig-pool-factory.cc',
+        'model/lte-sl-chunk-processor.cc',
+        'model/lte-sl-interference.cc',
+        'model/rr-sl-ff-mac-scheduler.cc',
+        'model/lte-phy-error-model.cc',
+        'model/3gpp-cal-mac-scheduler.cc',
+        'model/3gpp-propagation-loss-model.cc',
+        'model/nist-parabolic-3d-antenna-model.cc',
+        'model/cni-urbanmicrocell-propagation-loss-model.cc',
+        'model/nist-urbanmacrocell-propagation-loss-model.cc',
+        'model/nist-scm-urbanmacrocell-propagation-loss-model.cc',
+        'model/nist-indoor-propagation-loss-model.cc',
+        'model/nist-outdoor-propagation-loss-model.cc',
+        'model/nist-hybrid-propagation-loss-model.cc'
         ]
 
     module_test = bld.create_ns3_module_test_library('lte')
@@ -192,7 +214,10 @@ def build(bld):
         'test/lte-test-carrier-aggregation.cc',
         'test/lte-test-aggregation-throughput-scale.cc',
         'test/lte-test-ipv6-routing.cc',
-        'test/lte-test-carrier-aggregation-configuration.cc'
+        'test/lte-test-carrier-aggregation-configuration.cc',
+        'test/test-nist-parabolic-3d-antenna.cc',
+        'test/test-nist-phy-error-model.cc',
+        'test/test-nist-3gpp-validation.cc'
         ]
 
     headers = bld(features='ns3header')
@@ -244,6 +269,8 @@ def build(bld):
         'helper/radio-environment-map-helper.h',
         'helper/lte-hex-grid-enb-topology-helper.h',
         'helper/lte-global-pathloss-database.h',
+        'helper/lte-prose-helper.h',
+        'helper/lte-v2x-helper.h',
         'model/rem-spectrum-phy.h',
         'model/ff-mac-common.h',
         'model/ff-mac-csched-sap.h',
@@ -322,7 +349,27 @@ def build(bld):
         'helper/cc-helper.h',
         'model/component-carrier.h',
         'model/component-carrier-ue.h',
-        'model/component-carrier-enb.h'
+        'model/component-carrier-enb.h',
+        'model/lte-sl-tft.h',
+        'model/sl-pool.h',
+        'model/sl-pool-factory.h',
+        'model/sl-resource-pool-factory.h',
+        'model/sl-v2x-resource-pool-factory.h',
+        'model/sl-preconfig-pool-factory.h',
+        'model/sl-v2x-preconfig-pool-factory.h',
+        'model/lte-sl-chunk-processor.h',
+        'model/lte-sl-interference.h',
+        'model/rr-sl-ff-mac-scheduler.h',
+        'model/lte-phy-error-model.h',
+        'model/3gpp-cal-mac-scheduler.h',
+        'model/3gpp-propagation-loss-model.h',
+        'model/nist-parabolic-3d-antenna-model.h',
+        'model/cni-urbanmicrocell-propagation-loss-model.h',
+        'model/nist-urbanmacrocell-propagation-loss-model.h',
+        'model/nist-scm-urbanmacrocell-propagation-loss-model.h',
+        'model/nist-indoor-propagation-loss-model.h',
+        'model/nist-outdoor-propagation-loss-model.h',
+        'model/nist-hybrid-propagation-loss-model.h'
         ]
 
     if (bld.env['ENABLE_EMU']):

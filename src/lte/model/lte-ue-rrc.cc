@@ -15,11 +15,14 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Nicola Baldo <nbaldo@cttc.es>
- *         Budiarto Herman <budiarto.herman@magister.fi>
+ * Authors: Nicola Baldo <nbaldo@cttc.es>
+ *          Budiarto Herman <budiarto.herman@magister.fi>
  * Modified by:
  *          Danilo Abrignani <danilo.abrignani@unibo.it> (Carrier Aggregation - GSoC 2015)
  *          Biljana Bojovic <biljana.bojovic@cttc.es> (Carrier Aggregation)
+ *          NIST (D2D)
+ *          Fabian Eckermann <fabian.eckermann@udo.edu> (CNI)
+ *          Moritz Kahlert <moritz.kahlert@udo.edu> (CNI)
  */
 
 #include "lte-ue-rrc.h"
@@ -36,12 +39,369 @@
 #include <ns3/lte-rlc-am.h>
 #include <ns3/lte-pdcp.h>
 #include <ns3/lte-radio-bearer-info.h>
+#include <ns3/sl-pool.h>
+#include <ns3/random-variable-stream.h>
 
 #include <cmath>
 
 namespace ns3 {
 
 NS_LOG_COMPONENT_DEFINE ("LteUeRrc");
+
+///////////////////////////////////////////
+// LteEnbRrcSl
+///////////////////////////////////////////
+
+NS_OBJECT_ENSURE_REGISTERED (LteUeRrcSl);
+
+LteUeRrcSl::LteUeRrcSl ()
+  : m_slEnabled (false)
+{
+}
+
+void
+LteUeRrcSl::DoInitialize ()
+{
+}
+
+LteUeRrcSl::~LteUeRrcSl (void)
+{
+}
+  
+void
+LteUeRrcSl::DoDispose ()
+{
+}
+
+TypeId LteUeRrcSl::GetTypeId (void)
+{
+  static TypeId  tid = TypeId ("ns3::LteUeRrcSl")
+    .SetParent<Object> ()
+    .AddConstructor<LteUeRrcSl> ()
+    
+    ;
+  return tid;
+}
+
+/**
+ * \brief makes a copy of the sidelink configuration
+ * \return a copy of the sidelink configuration
+ */
+Ptr<LteUeRrcSl>
+LteUeRrcSl::Copy ()
+{
+  NS_LOG_FUNCTION (this);
+  Ptr<LteUeRrcSl> copy = CreateObject<LteUeRrcSl> ();
+  //copy internal values
+  copy->m_slEnabled = m_slEnabled;
+  copy->m_slMap = m_slMap;
+  return copy;
+}
+
+void
+LteUeRrcSl::SetSlEnabled (bool status)
+{
+  NS_LOG_FUNCTION (this);
+  m_slEnabled = status;
+}
+    
+bool
+LteUeRrcSl::IsSlEnabled ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_slEnabled;
+}
+
+void
+LteUeRrcSl::SetDiscEnabled (bool status)
+{
+  NS_LOG_FUNCTION (this);
+  m_discEnabled = status;
+}
+    
+bool
+LteUeRrcSl::IsDiscEnabled ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_discEnabled;
+}
+
+void
+LteUeRrcSl::SetSlPreconfiguration (LteRrcSap::SlPreconfiguration preconfiguration)
+{
+  NS_LOG_FUNCTION (this);
+  m_preconfiguration = preconfiguration;
+}
+
+void
+LteUeRrcSl::SetV2xEnabled (bool status)
+{
+  NS_LOG_FUNCTION (this);
+  m_v2xEnabled = status;
+}
+    
+bool
+LteUeRrcSl::IsV2xEnabled ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_v2xEnabled;
+}
+
+void
+LteUeRrcSl::SetSlV2xPreconfiguration (LteRrcSap::SlV2xPreconfiguration preconfiguration)
+{
+  NS_LOG_FUNCTION (this);
+  m_preconfigurationV2x = preconfiguration; 
+}
+
+LteRrcSap::SlPreconfiguration
+LteUeRrcSl::GetSlPreconfiguration ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_preconfiguration;
+}
+
+LteRrcSap::SlV2xPreconfiguration
+LteUeRrcSl::GetSlV2xPreconfiguration ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_preconfigurationV2x;
+}
+
+void
+LteUeRrcSl::SetSourceL2Id (uint32_t src)
+{
+  NS_LOG_FUNCTION (this);
+  m_sourceL2Id = src;
+}
+  
+bool
+LteUeRrcSl::IsTxInterested ()
+{
+  NS_LOG_FUNCTION (this);
+
+  //Loop through each bearer to see if one is interested to transmit
+  std::map <uint32_t, std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > >::iterator srcIt = m_slrbMap.find (m_sourceL2Id);
+  if (srcIt == m_slrbMap.end ()) {
+    return false;
+  } 
+  return m_slrbMap[m_sourceL2Id].size () >0;
+}
+
+bool
+LteUeRrcSl::IsRxInterested ()
+{
+  NS_LOG_FUNCTION (this);
+  
+  return m_rxGroup.size() > 0;
+}
+
+bool
+LteUeRrcSl::IsMonitoringInterested ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_monitorApps.size () > 0;
+}
+
+bool
+LteUeRrcSl::IsAnnouncingInterested ()
+{
+  NS_LOG_FUNCTION (this);
+  return m_announceApps.size () > 0;
+}
+
+std::list<uint32_t>
+LteUeRrcSl::GetTxDestinations ()
+{
+  std::list<uint32_t> destinations;
+
+  //Loop through each bearer to see if one is interested to transmit
+  std::map <uint32_t, std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > >::iterator srcIt = m_slrbMap.find (m_sourceL2Id);
+  if (srcIt != m_slrbMap.end ()) {
+    //Loop through each bearer to see if one is interested to transmit
+    std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> >::iterator it;
+    for (it = m_slrbMap[m_sourceL2Id].begin(); it != m_slrbMap[m_sourceL2Id].end(); it++) {
+      destinations.push_back (it->second->m_destinationL2Id);
+    }
+  }
+  return destinations;
+}
+
+uint8_t 
+LteUeRrcSl::GetDiscTxResources ()
+{
+  return m_discTxResources;
+}
+
+void
+LteUeRrcSl::SetDiscTxResources (uint8_t nb)
+{
+  m_discTxResources = nb;  
+}
+
+uint16_t 
+LteUeRrcSl::GetDiscInterFreq ()
+{
+  return m_discInterFreq;
+}
+void
+LteUeRrcSl::SetDiscInterFreq (uint16_t ulEarfcn)
+{
+  m_discInterFreq = ulEarfcn;
+}
+
+bool
+LteUeRrcSl::AddSidelinkRadioBearer (Ptr<LteSidelinkRadioBearerInfo> slb)
+{
+  std::map <uint32_t, std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > >::iterator srcIt = m_slrbMap.find (slb->m_sourceL2Id);
+  if (srcIt == m_slrbMap.end ()) {
+    //must insert map
+    std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > empty;
+    
+    m_slrbMap.insert (std::pair <uint32_t, std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > > (slb->m_sourceL2Id, empty));
+    NS_LOG_LOGIC ("First SLRB for source " << slb->m_sourceL2Id);
+  }
+
+  std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> >::iterator groupIt = m_slrbMap[slb->m_sourceL2Id].find (slb->m_destinationL2Id);
+  NS_ASSERT (groupIt == m_slrbMap[slb->m_sourceL2Id].end());
+  NS_LOG_LOGIC ("Adding SLRB " << slb->m_sourceL2Id << "->" << slb->m_destinationL2Id);
+  m_slrbMap[slb->m_sourceL2Id].insert (std::pair<uint32_t,Ptr<LteSidelinkRadioBearerInfo> > (slb->m_destinationL2Id, slb));
+
+  return true;
+}
+
+bool
+LteUeRrcSl::DeleteSidelinkRadioBearer (uint32_t src, uint32_t group)
+{
+  bool deleted = m_slrbMap[src].erase (group) >0;
+  if (m_slrbMap[src].size() == 0) {
+    //can delete the source as well
+    m_slrbMap.erase (src);
+  }
+  //remove from receiving group if present
+  m_rxGroup.remove (group);
+  
+  return deleted;
+}
+  
+Ptr<LteSidelinkRadioBearerInfo>
+LteUeRrcSl::GetSidelinkRadioBearer (uint32_t src, uint32_t group)
+{
+  Ptr<LteSidelinkRadioBearerInfo> slrb = NULL;
+  
+  NS_LOG_LOGIC ("Searching SLRB " << src << "->" << group);
+
+   //Print list of SLRB
+   {
+     NS_LOG_LOGIC ("Configured SLRBs "); 
+     std::map <uint32_t, std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > >::iterator srcIt;
+     for (srcIt = m_slrbMap.begin (); srcIt != m_slrbMap.end () ; srcIt++) {
+       std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> >::iterator dstIt;
+       for (dstIt = srcIt->second.begin() ; dstIt != srcIt->second.end (); dstIt++) {
+         NS_LOG_LOGIC ("SLRB " << dstIt->second->m_sourceL2Id << "->" << dstIt->second->m_destinationL2Id);
+       }
+     }
+   }
+  
+  std::map <uint32_t, std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> > >::iterator srcIt = m_slrbMap.find (src);
+  if (srcIt != m_slrbMap.end ()) {
+    std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> >::iterator srcIt2 = (*srcIt).second.find (group);
+    if (srcIt2 != (*srcIt).second.end()) {
+      slrb = m_slrbMap[src][group];      
+    }
+  }
+  return slrb;
+}
+
+Ptr<LteSidelinkRadioBearerInfo>
+LteUeRrcSl::GetSidelinkRadioBearer (uint32_t group)
+{
+  return GetSidelinkRadioBearer (m_sourceL2Id, group);
+}
+
+void 
+LteUeRrcSl::AddDiscoveryApps (std::list<uint32_t> apps, bool rxtx)
+{
+  for (std::list<uint32_t>::iterator it = apps.begin (); it != apps.end (); ++it)
+  {
+    if (rxtx)
+    {
+      m_announceApps.push_back (*it);
+    }
+    else 
+    {
+      m_monitorApps.push_back (*it);
+    }
+  }
+}
+
+
+void 
+LteUeRrcSl::RemoveDiscoveryApps (std::list<uint32_t> apps, bool rxtx)
+{
+  for (std::list<uint32_t>::iterator it = apps.begin (); it != apps.end (); ++it)
+  {
+    if (rxtx)
+    {
+      m_announceApps.remove (*it);
+    }
+    else 
+    {
+      m_monitorApps.remove (*it);
+    }
+  }
+}
+
+void
+LteUeRrcSl::RecordTransmissionOfSidelinkUeInformation ()
+{
+  m_lastSidelinkUeInformationTime = Simulator::Now ();
+}
+
+double
+LteUeRrcSl::GetTimeSinceLastTransmissionOfSidelinkUeInformation ()
+{
+  return (Simulator::Now() - m_lastSidelinkUeInformationTime).GetSeconds();
+}
+
+uint8_t
+LteUeRrcSl::GetNextLcid ()
+{
+  //find unused the LCID
+  bool found = true;
+  uint8_t lcid;
+  
+  for (lcid = 1; lcid < 11; lcid++) {
+    found = false;
+    std::map <uint32_t, Ptr<LteSidelinkRadioBearerInfo> >::iterator it;
+    for (it = m_slrbMap[m_sourceL2Id].begin(); it != m_slrbMap[m_sourceL2Id].end(); it++) {
+      if (it->second->m_logicalChannelIdentity == lcid) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      break; //avoid increasing lcid
+    }
+  }
+  NS_ASSERT (!found);
+  return lcid;
+}
+
+bool
+LteUeRrcSl::IsCellBroadcastingSIB18 (uint16_t cellId)
+{
+  std::map <uint16_t, LteSlCellConfiguration>::iterator it = m_slMap.find (cellId);
+  return (it != m_slMap.end() && it->second.haveSib18);
+}
+
+bool
+LteUeRrcSl::IsCellBroadcastingSIB19 (uint16_t cellId)
+{
+  std::map <uint16_t, LteSlCellConfiguration>::iterator it = m_slMap.find (cellId);
+  return (it != m_slMap.end() && it->second.haveSib19);
+}
+
 
 /////////////////////////////
 // CMAC SAP forwarder
@@ -61,6 +421,13 @@ public:
   virtual void SetTemporaryCellRnti (uint16_t rnti);
   virtual void NotifyRandomAccessSuccessful ();
   virtual void NotifyRandomAccessFailed ();
+  //communication
+  virtual void NotifySidelinkReception (uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id);
+  virtual void NotifyMacHasSlDataToSend ();
+  virtual void NotifyMacHasNotSlDataToSend ();
+  //discovery
+  virtual void NotifyDiscoveryReception (Ptr<LteControlMessage> msg);
+
 
 private:
   LteUeRrc* m_rrc; ///< the RRC class
@@ -90,10 +457,29 @@ UeMemberLteUeCmacSapUser::NotifyRandomAccessFailed ()
   m_rrc->DoNotifyRandomAccessFailed ();
 }
 
+void
+UeMemberLteUeCmacSapUser::NotifySidelinkReception (uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id)
+{
+  m_rrc->DoNotifySidelinkReception (lcId, srcL2Id, dstL2Id);
+}
 
+void
+UeMemberLteUeCmacSapUser::NotifyMacHasSlDataToSend ()
+{
+  m_rrc->DoNotifyMacHasSlDataToSend ();
+}
 
+void
+UeMemberLteUeCmacSapUser::NotifyMacHasNotSlDataToSend ()
+{
+  m_rrc->DoNotifyMacHasNotSlDataToSend ();
+}
 
-
+void
+UeMemberLteUeCmacSapUser::NotifyDiscoveryReception (Ptr<LteControlMessage> msg)
+{
+  m_rrc->DoNotifyDiscoveryReception (msg);
+}
 
 /// Map each of UE RRC states to its string representation.
 static const std::string g_ueRrcStateName[LteUeRrc::NUM_STATES] =
@@ -146,6 +532,17 @@ LteUeRrc::LteUeRrc ()
     m_hasReceivedSib1 (false),
     m_hasReceivedSib2 (false),
     m_csgWhiteList (0),
+    m_sidelinkConfiguration (0),
+    m_slssTransmissionActive(false),
+    m_txSlSyncOffsetIndicator(0),
+    m_hasSyncRef (false),
+    m_inCoverage(false),
+    m_slssId(0),
+    m_currSubframeNo(0),
+    m_currFrameNo(0),
+    m_hasDataToTransmit(false),
+    m_inInnerCellOfSyncRef(false),
+    m_slssTxTime(Seconds(0)),
     m_numberOfComponentCarriers (MIN_NO_CC)
 {
   NS_LOG_FUNCTION (this);
@@ -221,6 +618,12 @@ LteUeRrc::GetTypeId (void)
                    TimeValue (MilliSeconds (100)),
                    MakeTimeAccessor (&LteUeRrc::m_t300),
                    MakeTimeChecker ())
+    //Add accessor to sidelink configuration
+    .AddAttribute ("SidelinkConfiguration",
+                   "The sidelink configuration associated to this LtePhy",
+                   PointerValue (),
+                   MakePointerAccessor (&LteUeRrc::m_sidelinkConfiguration),
+                   MakePointerChecker <LteUeRrcSl> ())
     .AddTraceSource ("MibReceived",
                      "trace fired upon reception of Master Information Block",
                      MakeTraceSourceAccessor (&LteUeRrc::m_mibReceivedTrace),
@@ -281,6 +684,29 @@ LteUeRrc::GetTypeId (void)
                      "trace fired after configuring secondary carriers",
                      MakeTraceSourceAccessor (&LteUeRrc::m_sCarrierConfiguredTrace),
                      "ns3::LteUeRrc::SCarrierConfiguredTracedCallback")
+    .AddAttribute ("UeSlssTransmissionEnabled",
+             "If True, the UE transmits SLSSs when required as part of the sidelink synchronization protocol",
+              BooleanValue(false),
+              MakeBooleanAccessor (&LteUeRrc::m_slssTransmissionEnabled),
+              MakeBooleanChecker())
+    .AddAttribute ("MinSrsrp",
+              "The minimum S-RSRP required to consider a SyncRef detectable",
+              DoubleValue(-125),
+              MakeDoubleAccessor (&LteUeRrc::m_minSrsrp),
+              MakeDoubleChecker<double>())
+    .AddTraceSource ("ChangeOfSyncRef",
+                     "trace fired upon report of a change of SyncRef",
+                     MakeTraceSourceAccessor (&LteUeRrc::m_ChangeOfSyncRefTrace),
+                     "ns3::LteUeRrc::ChangeOfSyncRefTracedCallback")
+    .AddTraceSource ("SendSLSS",
+                     "trace fired upon send of a SLSS",
+                     MakeTraceSourceAccessor (&LteUeRrc::m_SendSlssTrace),
+                     "ns3::LteUeRrc::SendSLSSTracedCallback")
+    // Added to trace the reception of discovery message
+    .AddTraceSource ("DiscoveryMonitoring",
+                     "trace to track the monitoring of discovery messages",
+                     MakeTraceSourceAccessor (&LteUeRrc::m_discoveryMonitoringTrace),
+                     "ns3::LteUeRrc::DiscoveryMonitoringTracedCallback")
   ;
   return tid;
 }
@@ -538,6 +964,25 @@ LteUeRrc::DoSendData (Ptr<Packet> packet, uint8_t bid)
     }
 }
 
+void
+LteUeRrc::DoSendSidelinkData (Ptr<Packet> packet, uint32_t group)
+{
+  NS_LOG_FUNCTION (this << packet << "for sidelink group " <<group);
+  //Find the PDCP for sidelink transmission
+  Ptr<LteSidelinkRadioBearerInfo> slrb = m_sidelinkConfiguration->GetSidelinkRadioBearer (group);
+  NS_ASSERT_MSG (slrb, "could not find sidelink bearer for group == " << group); //the NAS should be aware about the existance of the bearer or not
+
+  LtePdcpSapProvider::TransmitPdcpSduParameters params;
+  params.pdcpSdu = packet;
+  params.rnti = m_rnti;
+  params.lcid = slrb->m_logicalChannelIdentity;
+
+  NS_LOG_LOGIC (this << " RNTI=" << m_rnti << " sending packet " << packet
+                     << " on SLRBBID " << (uint32_t) group
+                     << " (LCID " << (uint32_t) params.lcid << ")"
+                     << " (" << packet->GetSize () << " bytes)");
+  slrb->m_pdcp->GetLtePdcpSapProvider ()->TransmitPdcpSdu (params);
+}
 
 void
 LteUeRrc::DoDisconnect ()
@@ -572,6 +1017,383 @@ LteUeRrc::DoDisconnect ()
       break;
     }
 }
+
+void
+LteUeRrc::DoActivateSidelinkRadioBearer (uint32_t group, bool tx, bool rx)
+{
+  NS_LOG_FUNCTION (this);
+
+  NS_ASSERT_MSG(m_sidelinkConfiguration->GetSidelinkRadioBearer (m_sidelinkConfiguration->m_sourceL2Id, group) == NULL,
+                "Sidelink bearer with src="<< m_sidelinkConfiguration->m_sourceL2Id << " and group="<< group <<" is already installed.");
+  
+  switch (m_state)
+    {
+    case IDLE_START:
+    case IDLE_CELL_SEARCH:
+    case IDLE_WAIT_MIB_SIB1:
+    case IDLE_WAIT_MIB:
+    case IDLE_WAIT_SIB1:
+    case IDLE_CAMPED_NORMALLY:
+      NS_LOG_INFO ("Considering out of network");
+      NS_LOG_INFO ("IMSI " << m_imsi << " considered out of network");
+
+      if (m_rnti == 0)
+        {
+          //the RNTI was not configured, this is the first call to sidelink configuration
+          NS_LOG_INFO (this << " Setting RNTI to " <<  (uint16_t) (m_imsi & 0xFFFF));
+          //preconfigure the RNTI to the IMSI's 16 LSB for uniqueness
+          DoSetTemporaryCellRnti ( (uint16_t) (m_imsi & 0xFFFF));
+          //propagate to the MAC (normally the MAC indicates the RNTI when receiving message from the eNodeB)
+          m_cmacSapProvider.at (0)->SetRnti (m_rnti);
+          //since it is first time, configure the physical layer as well
+          if (!m_sidelinkConfiguration->IsV2xEnabled ())
+            {
+              m_cphySapProvider.at (0)->ConfigureUplink (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigGeneral.carrierFreq, m_sidelinkConfiguration->GetSlPreconfiguration().preconfigGeneral.slBandwidth);
+            }
+          else
+            {
+              m_cphySapProvider.at (0)->ConfigureUplink (m_sidelinkConfiguration->GetSlV2xPreconfiguration().v2xPreconfigFreqList.freq[0].v2xCommPreconfigGeneral.carrierFreq, m_sidelinkConfiguration->GetSlV2xPreconfiguration().v2xPreconfigFreqList.freq[0].v2xCommPreconfigGeneral.slBandwidth);
+            }
+        }
+
+      if (tx)
+        {
+          Ptr<LteSidelinkRadioBearerInfo> slbInfo = AddSlrb (m_sidelinkConfiguration->m_sourceL2Id, group, m_sidelinkConfiguration->GetNextLcid ());
+          NS_LOG_INFO ("Created new TX SLRB for group " << group << " LCID=" << (slbInfo->m_logicalChannelIdentity & 0xF));
+        }
+      if (rx)
+        {
+          NS_LOG_LOGIC (this << " rx: AddSlDestination " << group);
+          //Add to the list of group to monitor for sidelink
+          m_sidelinkConfiguration->m_rxGroup.push_back (group);
+          //tell the phy to listen for the group
+          m_cphySapProvider.at (0)->AddSlDestination (group);
+          m_cmacSapProvider.at (0)->AddSlDestination (group);
+        }
+
+      NS_ASSERT (
+          m_sidelinkConfiguration->GetSlPreconfiguration().preconfigComm.nbPools >0 ||
+          (
+            m_sidelinkConfiguration->GetSlV2xPreconfiguration().v2xPreconfigFreqList.freq[0].v2xCommTxPoolList.nbPools >0 &&
+            m_sidelinkConfiguration->GetSlV2xPreconfiguration().v2xPreconfigFreqList.freq[0].v2xCommRxPoolList.nbPools >0
+          )
+        );
+
+      //Activate bearer using preconfiguration if available
+      if (tx) 
+        {
+          NS_LOG_INFO ("Configuring Tx pool");
+
+          if (!m_sidelinkConfiguration->IsV2xEnabled ()) 
+            {
+              Ptr<SidelinkTxCommResourcePool> txPool = CreateObject<SidelinkTxCommResourcePool>();
+              txPool->SetPool (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigComm.pools[0]);
+
+              std::list <uint32_t>::iterator it;
+              std::list <uint32_t> destinations = m_sidelinkConfiguration->GetTxDestinations ();
+              //int index = 0;
+              //currently we can only use one pool so all groups will use the same one
+              
+              //for (it = destinations.begin() ; it != destinations.end() ; it++) {
+              //m_cmacSapProvider.at (0)->AddSlTxPool (*it, txPool);
+              m_cmacSapProvider.at (0)->AddSlTxPool (group, txPool);
+              //if this is the first group setup, register pool with physical layer, otherwise it has already been done
+              if (destinations.size() == 1) 
+                {
+                  //inform PHY about pool
+                  m_cphySapProvider.at (0)->SetSlTxPool (txPool);
+                }
+            }
+          else 
+            {
+              Ptr<SidelinkTxCommResourcePoolV2x> txPool = CreateObject<SidelinkTxCommResourcePoolV2x>();
+              txPool->SetPool (m_sidelinkConfiguration->GetSlV2xPreconfiguration().v2xPreconfigFreqList.freq[0].v2xCommTxPoolList.pools[0]);
+
+              std::list <uint32_t>::iterator it;
+              std::list <uint32_t> destinations = m_sidelinkConfiguration->GetTxDestinations ();
+              //currently we can only use one pool so all groups will use the same one
+              m_cmacSapProvider.at (0)->AddSlV2xTxPool (group, txPool);
+              //if this is the first group setup, register pool with physical layer, otherwise it has already been done
+              if (destinations.size() == 1) 
+                {
+                  //inform PHY about pool
+                  m_cphySapProvider.at (0)->SetSlV2xTxPool (txPool);
+                }
+            }        
+        }
+      if (tx || rx)
+        {
+          //Configure receiving pool
+          if (!m_sidelinkConfiguration->IsV2xEnabled ())
+            {
+              std::list< Ptr<SidelinkRxCommResourcePool> > pools;
+              Ptr<SidelinkRxCommResourcePool> pool = CreateObject <SidelinkRxCommResourcePool> ();
+              pool->SetPool (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigComm.pools[0]);
+              //must find ways to store Rx pool though it is in different format
+              //m_sidelinkConfiguration->rxPools.push_back (std::make_pair(msg.sib18.commConfig.commRxPool.pools[i], pool));
+              pools.push_back (pool);
+              m_cmacSapProvider.at (0)->SetSlRxPools (pools);
+              m_cphySapProvider.at (0)->SetSlRxPools (pools);
+            }
+          else
+            {
+              std::list< Ptr<SidelinkRxCommResourcePoolV2x> > pools;
+              Ptr<SidelinkRxCommResourcePoolV2x> pool = CreateObject <SidelinkRxCommResourcePoolV2x> ();
+              pool->SetPool (m_sidelinkConfiguration->GetSlV2xPreconfiguration().v2xPreconfigFreqList.freq[0].v2xCommRxPoolList.pools[0]);
+              //must find ways to store Rx pool though it is in different format
+              pools.push_back (pool);
+              m_cmacSapProvider.at (0)->SetSlV2xRxPools (pools);
+              m_cphySapProvider.at (0)->SetSlV2xRxPools (pools);
+            }
+        }
+      //for testing, just indicate it is ok
+      m_asSapUser->NotifySidelinkRadioBearerActivated (group);
+      break;
+      
+    case IDLE_WAIT_SIB2:
+    case IDLE_CONNECTING:
+      NS_LOG_INFO ("Connecting, must wait to send message");
+      break;
+      
+    case CONNECTED_NORMALLY:
+    case CONNECTED_HANDOVER:
+    case CONNECTED_PHY_PROBLEM:
+    case CONNECTED_REESTABLISHING:
+      NS_LOG_INFO ("Considering in coverage");
+      if (tx)
+        {
+          Ptr<LteSidelinkRadioBearerInfo> slbInfo = AddSlrb (m_sidelinkConfiguration->m_sourceL2Id, group, m_sidelinkConfiguration->GetNextLcid ());
+          NS_LOG_INFO ("Created new TX SLRB for group " << group << " LCID=" << (slbInfo->m_logicalChannelIdentity & 0xF));
+        }
+      if (rx)
+        {
+          NS_LOG_LOGIC (this << " rx: AddSlDestination " << group);
+          //Add to the list of group to monitor for sidelink
+          m_sidelinkConfiguration->m_rxGroup.push_back (group);
+          //tell the phy to listen for the group
+          m_cphySapProvider.at (0)->AddSlDestination (group);
+          m_cmacSapProvider.at (0)->AddSlDestination (group);
+        }
+      //Try to send to eNodeB
+      SendSidelinkUeInformation ();
+      break;
+        
+    default: // i.e. IDLE_RANDOM_ACCESS
+      NS_FATAL_ERROR ("method unexpected in state " << ToString (m_state));
+      break;
+    }
+}
+
+void
+LteUeRrc::DoDeactivateSidelinkRadioBearer (uint32_t group)
+{
+  NS_LOG_FUNCTION (this);
+
+  //TODO: need handling of SLRBs for the group coming from other UEs as well.
+  
+  if (m_sidelinkConfiguration->DeleteSidelinkRadioBearer (m_sidelinkConfiguration->m_sourceL2Id, group))
+    {
+      switch (m_state)
+      {
+      case IDLE_START:
+      case IDLE_CELL_SEARCH:
+      case IDLE_WAIT_MIB_SIB1:
+      case IDLE_WAIT_MIB:
+      case IDLE_WAIT_SIB1:
+      case IDLE_CAMPED_NORMALLY:
+        NS_LOG_INFO ("Considering out of network");
+        //Activate bearer using preconfiguration if available
+        //TBD        
+        break;                
+      case CONNECTED_NORMALLY:
+      case CONNECTED_HANDOVER:
+      case CONNECTED_PHY_PROBLEM:
+      case CONNECTED_REESTABLISHING:
+        NS_LOG_INFO ("Considering in coverage");
+        //Try to send to eNodeB
+        SendSidelinkUeInformation ();
+        break;
+        
+      default: // i.e. IDLE_RANDOM_ACCESS
+        NS_FATAL_ERROR ("method unexpected in state " << ToString (m_state));
+        break;
+      }
+    }
+}
+
+Ptr<LteSidelinkRadioBearerInfo>
+LteUeRrc::AddSlrb (uint32_t source, uint32_t destination, uint8_t lcid)
+{
+  Ptr<LteSidelinkRadioBearerInfo> slbInfo = CreateObject <LteSidelinkRadioBearerInfo> ();
+    slbInfo->m_sourceL2Id = source;
+    slbInfo->m_destinationL2Id = destination;
+    slbInfo->m_logicalChannelIdentity = lcid;
+    //slbInfo->m_tx = tx;
+    //slbInfo->m_rx = rx;
+    m_sidelinkConfiguration->AddSidelinkRadioBearer (slbInfo);
+
+    //create PDCP/RLC stack
+    ObjectFactory rlcObjectFactory;
+    rlcObjectFactory.SetTypeId (LteRlcUm::GetTypeId ());
+    Ptr<LteRlc> rlc = rlcObjectFactory.Create ()->GetObject<LteRlc> ();
+    rlc->SetLteMacSapProvider (m_macSapProvider);
+    rlc->SetRnti (m_rnti); //??
+    rlc->SetLcId (slbInfo->m_logicalChannelIdentity);
+    rlc->SetSourceL2Id (slbInfo->m_sourceL2Id);
+    rlc->SetDestinationL2Id (slbInfo->m_destinationL2Id);
+    
+    slbInfo->m_rlc = rlc;
+        
+    Ptr<LtePdcp> pdcp = CreateObject<LtePdcp> ();
+    pdcp->SetRnti (m_rnti);
+    pdcp->SetLcId (slbInfo->m_logicalChannelIdentity);
+    pdcp->SetSourceL2Id (slbInfo->m_sourceL2Id);
+    pdcp->SetDestinationL2Id (slbInfo->m_destinationL2Id);
+    pdcp->SetLtePdcpSapUser (m_drbPdcpSapUser);
+    pdcp->SetLteRlcSapProvider (rlc->GetLteRlcSapProvider ());
+    rlc->SetLteRlcSapUser (pdcp->GetLteRlcSapUser ());
+    slbInfo->m_pdcp = pdcp;
+
+
+    struct LteUeCmacSapProvider::LogicalChannelConfig lcConfig;
+    lcConfig.priority = 9;
+    lcConfig.prioritizedBitRateKbps = 65535;
+    lcConfig.bucketSizeDurationMs = 65535;
+    lcConfig.logicalChannelGroup = 3; //"11" as per 36.321      
+
+    m_cmacSapProvider.at (0)->AddLc (slbInfo->m_logicalChannelIdentity,
+                              slbInfo->m_sourceL2Id,
+                              slbInfo->m_destinationL2Id,
+                              lcConfig,
+                              rlc->GetLteMacSapUser ());
+    //rlc->Initialize ();
+
+    return slbInfo;
+}
+
+void
+LteUeRrc::DoAddDiscoveryApps (std::list<uint32_t> apps, bool rxtx)
+{
+  NS_LOG_FUNCTION (this);
+  
+  switch (m_state)
+    {
+    case IDLE_START:
+    case IDLE_CELL_SEARCH:
+    case IDLE_WAIT_MIB_SIB1:
+    case IDLE_WAIT_MIB:
+    case IDLE_WAIT_SIB1:
+    case IDLE_CAMPED_NORMALLY:
+      NS_LOG_INFO ("Considering out of network");
+
+      if (m_rnti == 0)
+        {
+          NS_LOG_INFO (this << " Setting RNTI to " <<  (uint16_t) (m_imsi & 0xFFFF));
+          //preconfigure the RNTI to the IMSI's 16 LSB for uniqueness
+          DoSetTemporaryCellRnti ( (uint16_t) (m_imsi & 0xFFFF));
+          //propagate to the MAC (normally the MAC indicates the RNTI when receiving message from the eNodeB)
+          m_cmacSapProvider.at (0)->SetRnti (m_rnti);
+          //since it is first time, configure the physical layer as well
+          m_cphySapProvider.at (0)->ConfigureUplink (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigGeneral.carrierFreq, m_sidelinkConfiguration->GetSlPreconfiguration().preconfigGeneral.slBandwidth);
+        }
+          
+      m_sidelinkConfiguration->AddDiscoveryApps (apps, rxtx);
+      NS_LOG_INFO ("Created new discovery Applications for UE " << m_rnti );
+
+      //Inform MAC about new disc apps
+      m_cmacSapProvider.at (0)->ModifyDiscTxApps (m_sidelinkConfiguration->m_announceApps);
+      m_cmacSapProvider.at (0)->ModifyDiscRxApps (m_sidelinkConfiguration->m_monitorApps);
+
+      //Set pool using preconfigured one if it exits
+      if (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigDisc.nbPools >0)
+      {
+        //announce: Tx
+        if (rxtx)
+        {
+          NS_LOG_INFO ("Configuring Tx preconfigured pool");
+          Ptr<SidelinkTxDiscResourcePool> txPool = CreateObject<SidelinkTxDiscResourcePool>();
+          txPool->SetPool (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigDisc.pools[0]);
+
+          //inform MAC and PHY about the pool
+          m_cmacSapProvider.at (0)->AddSlTxPool (txPool);
+          m_cphySapProvider.at (0)->SetSlTxPool (txPool);
+        }
+        //monitor: Rx
+        else 
+        {
+          std::list< Ptr<SidelinkRxDiscResourcePool> > pools;
+          Ptr<SidelinkRxDiscResourcePool> pool = CreateObject <SidelinkRxDiscResourcePool> ();
+          pool->SetPool (m_sidelinkConfiguration->GetSlPreconfiguration().preconfigDisc.pools[0]);
+          pools.push_back (pool);
+          m_cmacSapProvider.at (0)->SetSlRxPools (pools);
+          m_cphySapProvider.at (0)->SetSlRxPools (pools);
+        }
+      }
+
+      break;
+      
+    case IDLE_WAIT_SIB2:
+    case IDLE_CONNECTING:
+      NS_LOG_INFO ("Connecting, must wait to send message");
+      break;
+      
+    case CONNECTED_NORMALLY:
+    case CONNECTED_HANDOVER:
+    case CONNECTED_PHY_PROBLEM:
+    case CONNECTED_REESTABLISHING:
+      NS_LOG_INFO ("Considering in coverage");
+      m_sidelinkConfiguration->AddDiscoveryApps (apps, rxtx);
+      NS_LOG_INFO ("Created new discovery Applications for UE " << m_rnti );
+      //Inform MAC about new disc apps
+      m_cmacSapProvider.at (0)->ModifyDiscTxApps (m_sidelinkConfiguration->m_announceApps);
+      m_cmacSapProvider.at (0)->ModifyDiscRxApps (m_sidelinkConfiguration->m_monitorApps);
+      //Try to send to eNodeB
+      SendSidelinkUeInformation ();
+      break;
+        
+    default: // i.e. IDLE_RANDOM_ACCESS
+      NS_FATAL_ERROR ("method unexpected in state " << ToString (m_state));
+      break;
+    }
+}
+
+void
+LteUeRrc::DoRemoveDiscoveryApps (std::list<uint32_t> apps, bool rxtx)
+{
+  NS_LOG_FUNCTION (this);
+
+  m_sidelinkConfiguration->RemoveDiscoveryApps (apps, rxtx);
+  NS_LOG_INFO ("deleting new discovery Applications for UE " << m_rnti );
+  // Inform MAC
+  m_cmacSapProvider.at (0)->ModifyDiscTxApps (m_sidelinkConfiguration->m_announceApps);
+  m_cmacSapProvider.at (0)->ModifyDiscRxApps (m_sidelinkConfiguration->m_monitorApps);
+
+      switch (m_state)
+      {
+      case IDLE_START:
+      case IDLE_CELL_SEARCH:
+      case IDLE_WAIT_MIB_SIB1:
+      case IDLE_WAIT_MIB:
+      case IDLE_WAIT_SIB1:
+      case IDLE_CAMPED_NORMALLY:
+        NS_LOG_INFO ("Considering out of network");
+        //Activate bearer using preconfiguration if available
+        //TBD    
+        break;                
+      case CONNECTED_NORMALLY:
+      case CONNECTED_HANDOVER:
+      case CONNECTED_PHY_PROBLEM:
+      case CONNECTED_REESTABLISHING:
+        NS_LOG_INFO ("Considering in coverage");
+        //Try to send to eNodeB
+        SendSidelinkUeInformation ();
+        break;
+        
+      default: // i.e. IDLE_RANDOM_ACCESS
+        NS_FATAL_ERROR ("method unexpected in state " << ToString (m_state));
+        break;
+      }
+}  
 
 void
 LteUeRrc::DoReceivePdcpSdu (LtePdcpSapUser::ReceivePdcpSduParameters params)
@@ -626,6 +1448,12 @@ LteUeRrc::DoNotifyRandomAccessSuccessful ()
           {
             VarMeasReportListClear (measIdIt->second.measId);
           }
+        //if target cell sending SIB 18 or 19 and SidelinkUEInformation was sent in the last second
+        //with interest/resource request,
+        //initiate transmission of the SidelinkUEInformation message in accordance with 5.X.2.3
+        if ((m_sidelinkConfiguration->IsCellBroadcastingSIB18 (m_cellId) || m_sidelinkConfiguration->IsCellBroadcastingSIB19 (m_cellId)) && m_sidelinkConfiguration->GetTimeSinceLastTransmissionOfSidelinkUeInformation () < 1.0) {
+          SendSidelinkUeInformation ();
+        }
 
         SwitchToState (CONNECTED_NORMALLY);
         m_handoverEndOkTrace (m_imsi, m_cellId, m_rnti);
@@ -947,7 +1775,118 @@ LteUeRrc::DoRecvSystemInformation (LteRrcSap::SystemInformation msg)
           break;
         }
     }
+  if (msg.haveSib18 && m_sidelinkConfiguration != NULL && m_sidelinkConfiguration->IsSlEnabled())
+    {
+      switch (m_state)
+        {
+        case IDLE_CAMPED_NORMALLY:
+        case CONNECTED_NORMALLY:
+          {
+            NS_LOG_LOGIC (this << " processing SIB18 in state " << m_state);
+            //update sidelink information for the cell
+            std::map <uint16_t, LteUeRrcSl::LteSlCellConfiguration>::iterator it = m_sidelinkConfiguration->m_slMap.find (m_cellId);
+            if (it == m_sidelinkConfiguration->m_slMap.end ()) {
+              NS_LOG_LOGIC (this << " adding SIB18 for cell " << m_cellId);
+              LteUeRrcSl::LteSlCellConfiguration cellConfig;
+              cellConfig.cellId = m_cellId;
+              cellConfig.haveSib18 = true;
+              cellConfig.sib18 = msg.sib18;
+              m_sidelinkConfiguration->m_slMap.insert (std::pair<uint16_t, LteUeRrcSl::LteSlCellConfiguration> (m_cellId, cellConfig));
+            } else {
+              NS_LOG_LOGIC (this << " updating SIB18 for cell " << m_cellId);
+              it->second.haveSib18 = true;
+              it->second.sib18 = msg.sib18;
+            }
+            if (m_sidelinkConfiguration->IsTxInterested() || m_sidelinkConfiguration->IsRxInterested ()) {
+              //Inform MAC about the pools to be used
+              //TBD
+              std::list< Ptr<SidelinkRxCommResourcePool> > pools;
+              for (int i = 0 ; i < msg.sib18.commConfig.commRxPool.nbPools; i++)
+                {
+                  Ptr<SidelinkRxCommResourcePool> pool = NULL;
+                  for (uint32_t j = 0 ; j < m_sidelinkConfiguration->rxPools.size() && pool == NULL; j++)
+                    {
+                      
+                      if (msg.sib18.commConfig.commRxPool.pools[i]== m_sidelinkConfiguration->rxPools.at(j).first)
+                        {
+                          pool = m_sidelinkConfiguration->rxPools.at(j).second;
+                        }
+                    }
+                  if (pool == NULL)
+                    {
+                      pool = CreateObject <SidelinkRxCommResourcePool> ();
+                      pool->SetPool (msg.sib18.commConfig.commRxPool.pools[i]);
+                      m_sidelinkConfiguration->rxPools.push_back (std::make_pair(msg.sib18.commConfig.commRxPool.pools[i], pool));
+                    }
+                  pools.push_back (pool);
+                }
+              m_cmacSapProvider.at (0)->SetSlRxPools (pools);
+              m_cphySapProvider.at (0)->SetSlRxPools (pools);
+            }
+          }
+          break;
+        default: // IDLE_START, IDLE_CELL_SEARCH, IDLE_WAIT_MIB, IDLE_WAIT_MIB_SIB1, IDLE_WAIT_SIB1
+          // do nothing
+          break;
+        }
+    }
 
+  if (msg.haveSib19 && m_sidelinkConfiguration != NULL && m_sidelinkConfiguration->IsDiscEnabled())
+    {
+      switch (m_state)
+      {
+        case IDLE_CAMPED_NORMALLY:
+        case CONNECTED_NORMALLY:
+        {
+          NS_LOG_LOGIC (this << " processing SIB19 in state " << m_state);
+          //update sidelink information for the cell
+          std::map <uint16_t, LteUeRrcSl::LteSlCellConfiguration>::iterator it = m_sidelinkConfiguration->m_slMap.find (m_cellId);
+          if (it == m_sidelinkConfiguration->m_slMap.end ()) {
+            NS_LOG_LOGIC (this << " adding SIB19 for cell " << m_cellId);
+            LteUeRrcSl::LteSlCellConfiguration cellConfig;
+            cellConfig.cellId = m_cellId;
+            cellConfig.haveSib19 = true;
+            cellConfig.sib19 = msg.sib19;
+            m_sidelinkConfiguration->m_slMap.insert (std::pair<uint16_t, LteUeRrcSl::LteSlCellConfiguration> (m_cellId, cellConfig));
+          } 
+          else 
+          {
+            NS_LOG_LOGIC (this << " updating SIB19 for cell " << m_cellId);
+            it->second.haveSib19 = true;
+            it->second.sib19 = msg.sib19;
+          }
+          if (m_sidelinkConfiguration->IsMonitoringInterested() || m_sidelinkConfiguration->IsAnnouncingInterested ()) 
+          {
+            
+            std::list< Ptr<SidelinkRxDiscResourcePool> > pools;
+            for (int i = 0 ; i < msg.sib19.discConfig.discRxPool.nbPools; i++)
+            {
+              Ptr<SidelinkRxDiscResourcePool> pool = NULL;
+              for (uint32_t j = 0 ; j < m_sidelinkConfiguration->monitorPools.size() && pool == NULL; j++)
+              {
+                if (msg.sib19.discConfig.discRxPool.pools[i]== m_sidelinkConfiguration->monitorPools.at(j).first)
+                {
+                  pool = m_sidelinkConfiguration->monitorPools.at(j).second;
+                }
+              }                
+              if (pool == NULL)
+              {
+                pool = CreateObject <SidelinkRxDiscResourcePool> ();
+                pool->SetPool (msg.sib19.discConfig.discRxPool.pools[i]);
+                m_sidelinkConfiguration->monitorPools.push_back (std::make_pair(msg.sib19.discConfig.discRxPool.pools[i], pool));
+              }
+              pools.push_back (pool);
+            }
+          m_cmacSapProvider.at (0)->SetSlRxPools (pools);
+          m_cphySapProvider.at (0)->SetSlRxPools (pools);
+          }
+        }//end case
+          break;
+        default: // IDLE_START, IDLE_CELL_SEARCH, IDLE_WAIT_MIB, IDLE_WAIT_MIB_SIB1, IDLE_WAIT_SIB1
+            // do nothing
+          break;
+      }//end switch
+    }//end if
 }
 
 
@@ -1040,6 +1979,16 @@ LteUeRrc::DoRecvRrcConnectionReconfiguration (LteRrcSap::RrcConnectionReconfigur
             {
               ApplyMeasConfig (msg.measConfig);
             }
+          //check if it has sidelink resource information
+          if (msg.haveSlCommConfig)
+            {
+              ApplySidelinkDedicatedConfiguration (msg.slCommConfig);
+            }
+          //check if it has discovery resource information
+          if (msg.haveSlDiscConfig)
+            {
+              ApplySidelinkDedicatedConfiguration (msg.slDiscConfig);
+            }
           LteRrcSap::RrcConnectionReconfigurationCompleted msg2;
           msg2.rrcTransactionIdentifier = msg.rrcTransactionIdentifier;
           m_rrcSapUser->SendRrcConnectionReconfigurationCompleted (msg2);
@@ -1068,6 +2017,14 @@ LteUeRrc::DoRecvRrcConnectionReestablishment (LteRrcSap::RrcConnectionReestablis
          *       CONNECTED_NORMALLY state. See Section 5.3.7.5 of 3GPP TS
          *       36.331.
          */
+
+        //if target cell sending SIB 18 or 19 and SidelinkUEInformation was sent in the last second
+        //with interest/resource request,
+        //initiate transmission of the SidelinkUEInformation message in accordance with 5.X.2.3
+        if ((m_sidelinkConfiguration->IsCellBroadcastingSIB18 (m_cellId) || m_sidelinkConfiguration->IsCellBroadcastingSIB19 (m_cellId)) && m_sidelinkConfiguration->GetTimeSinceLastTransmissionOfSidelinkUeInformation () < 1.0)
+          {
+            SendSidelinkUeInformation ();
+          }
       }
       break;
 
@@ -1425,6 +2382,11 @@ LteUeRrc::ApplyRadioResourceConfigDedicated (LteRrcSap::RadioResourceConfigDedic
             m_cmacSapProvider.at (i)->AddLc (dtamIt->logicalChannelIdentity,
                                     lcConfig,
                                     rlc->GetLteMacSapUser ());
+            // added function to handle priority in the lac layer of UE 
+            m_cmacSapProvider.at (i)->AddLCPriority (m_rnti,
+                                                     dtamIt->logicalChannelIdentity,
+                                                     dtamIt->logicalChannelConfig.priority);
+
           }
           rlc->Initialize ();
         }
@@ -3101,6 +4063,1008 @@ LteUeRrc::SaveScellUeMeasurements (uint16_t sCellId, double rsrp, double rsrq,
     }
 
 }   // end of void SaveUeMeasurements
+
+
+/**
+ * Process dedicated sidelink configuration
+ * \param config The sidelink configuration
+ */
+void
+LteUeRrc::ApplySidelinkDedicatedConfiguration (LteRrcSap::SlCommConfig config)
+{
+  NS_LOG_FUNCTION (this);
+
+  //TODO: implement procedures described in 5.3.10.X
+  // 1>	if the RRCConnectionReconfiguration message includes the sl-CommConfig:
+  //   2>	if commTxResources is included and set to setup:
+  //     3>	from the next SC period use the resources indicated by commTxResources for sidelink direct communication transmission, as specified in 5.X.4;
+  // 2>	else if commTxResources is included and set to release:
+  //     3>	from the next SC period, release the resources allocated for sidelink direct communication transmission previously configured by commTxResources;
+
+  //pools are allocated per UE, not per destinations. A UE may have multiple pools
+  //and we need to maintain the list of pools
+  //pass information to MAC to change scheduling
+  if (config.commTxResources == LteRrcSap::SlCommConfig::SETUP) {
+    NS_LOG_INFO ("Received dedicated resources " << config.setup.setup);
+
+    Ptr<SidelinkTxCommResourcePool> txPool = CreateObject<SidelinkTxCommResourcePool>();
+    if (config.setup.setup == LteRrcSap::SlCommTxResourcesSetup::SCHEDULED) {
+      txPool->SetPool (config.setup.scheduled.commTxConfig);
+      txPool->SetScheduledTxParameters (config.setup.scheduled.crnti, config.setup.scheduled.macMainConfig, config.setup.scheduled.commTxConfig, 0, config.setup.scheduled.mcs);
+    } else {
+      NS_ASSERT (config.setup.ueSelected.havePoolToAdd);
+      //configure lower layers to transmit the sidelink control information and the corresponding data using the pool of resources indicated by the first entry in commTxPoolNormalDedicated;
+      txPool->SetPool (config.setup.ueSelected.poolToAddModList.pools[0].pool);
+    }
+    
+    std::list <uint32_t>::iterator it;
+    std::list <uint32_t> destinations = m_sidelinkConfiguration->GetTxDestinations ();
+    //int index = 0;
+    //currently we can only use one pool so all groups will use the same one
+    for (it = destinations.begin() ; it != destinations.end() ; it++) {
+      m_cmacSapProvider.at (0)->AddSlTxPool (*it, txPool);
+    }
+    //inform PHY about pool
+    m_cphySapProvider.at (0)->SetSlTxPool (txPool);
+    
+    //indicate NAS that bearer was established
+    //TODO: we should only indicate this once per bearer
+    for (std::list <uint32_t>::iterator it = destinations.begin() ; it != destinations.end() ; it++) {
+      m_asSapUser->NotifySidelinkRadioBearerActivated (*it);
+    }
+    
+  } else {
+    //release all tranmission pools
+    m_cphySapProvider.at (0)->RemoveSlTxPool ();
+  }
+
+}
+
+void
+LteUeRrc::ApplySidelinkDedicatedConfiguration (LteRrcSap::SlDiscConfig config)
+{
+  NS_LOG_FUNCTION (this);
+  if (config.discTxResources == LteRrcSap::SlDiscConfig::SETUP) {
+    NS_LOG_INFO ("Received dedicated resources (discovery) " << config.setup.setup);
+
+    Ptr<SidelinkTxDiscResourcePool> txPool = CreateObject<SidelinkTxDiscResourcePool>();
+
+    if (config.setup.setup == LteRrcSap::SlDiscTxResourcesSetup::SCHEDULED) {
+      txPool->SetPool (config.setup.scheduled.discTxConfig);
+      txPool->SetScheduledTxParameters (config.setup.scheduled.discTxConfig, config.setup.scheduled.discTfIndexList, config.setup.scheduled.discHoppingConfigDisc);
+    } 
+    else {
+      NS_ASSERT (config.setup.ueSelected.havePoolToAdd && config.setup.ueSelected.poolToAddModList.nbPools > 0);
+
+      // all pools in the same list have the same criteria for poolSelection
+      if (config.setup.ueSelected.poolToAddModList.pools[0].pool.txParameters.ueSelectedResourceConfig.poolSelection.selection == LteRrcSap::PoolSelection::RSRPBASED) {
+
+        uint8_t i = 0;
+        bool poolFound = false;
+        while ((i < config.setup.ueSelected.poolToAddModList.nbPools) and (!poolFound)) {
+
+          // retrieve upper and lower RSRP bounds
+          // make sure that the current rsrp vlaue is in-between threshLow and threshHigh;
+          // otherwise go to the next pool
+          uint32_t lowRsrp = config.setup.ueSelected.poolToAddModList.pools[i].pool.txParameters.ueSelectedResourceConfig.poolSelectionRsrpBased.threshLow;
+          uint32_t highRsrp = config.setup.ueSelected.poolToAddModList.pools[i].pool.txParameters.ueSelectedResourceConfig.poolSelectionRsrpBased.threshHigh;
+
+          // check the rsrp values : Value 0 corresponds to -infinity, value 1 to -110dBm, 
+          // value 2 to -100dBm, and so on (i.e. in steps of 10dBm) until value 6, 
+          // which corresponds to -60dBm, while value 7 corresponds to +infinity.
+          NS_ASSERT_MSG (lowRsrp <= highRsrp, "Invalid Rsrp limits : lower bound is greater than upper bound");
+          NS_ASSERT_MSG ((lowRsrp != 7) and (highRsrp != 0), "invalid RSRP limits values");
+
+          // apply the layer 3 filter before checking the pool
+          SaveUeMeasurements (m_cellId, m_storedMeasValues[m_cellId].rsrp, m_storedMeasValues[m_cellId].rsrq, true);
+
+          //low = -infinity
+          if (lowRsrp == 0) {
+            //high = + infinity
+            if (highRsrp == 7) {
+              // any rsrp value would be ok : select first pool
+              txPool->SetPool (config.setup.ueSelected.poolToAddModList.pools[0].pool);
+              poolFound = true;
+            }
+            //high could be : -110 dBm to -60 dBm 
+            else {
+              // check if rsrp <= highRsrp
+              if (m_storedMeasValues[m_cellId].rsrp <= LteRrcSap::RsrpValueDbm (highRsrp)) {
+                txPool->SetPool (config.setup.ueSelected.poolToAddModList.pools[i].pool);
+                poolFound = true;
+              }
+            }
+          }
+          // low could be : -110 dBm to -60 dBm 
+          else {
+            //high = + infinity
+            if (highRsrp == 7) {
+              // check if rsrp >= lowRsrp
+              if (m_storedMeasValues[m_cellId].rsrp >= LteRrcSap::RsrpValueDbm (lowRsrp)) {
+                txPool->SetPool (config.setup.ueSelected.poolToAddModList.pools[i].pool);
+                poolFound = true;
+              }
+            }
+            //high could be : -110 dBm to -60 dBm
+            else {
+              // check if lowRsrp <= rsrp <= highRsrp
+              if (((m_storedMeasValues[m_cellId].rsrp >= LteRrcSap::RsrpValueDbm (lowRsrp)) and (m_storedMeasValues[m_cellId].rsrp <= LteRrcSap::RsrpValueDbm (highRsrp))))  {
+                txPool->SetPool (config.setup.ueSelected.poolToAddModList.pools[i].pool);
+                poolFound = true;
+              }
+            }
+          }         
+          //increment; so if the pool is not good, go to the next one
+          i++;
+        }//end while
+        NS_ASSERT_MSG (poolFound, "No pool match the RSRP-based selection");
+      }//end if (rsrp)
+
+      else {
+      // ue selected : randomly selected using a uniform distribution
+      txPool->SetPool (config.setup.ueSelected.poolToAddModList.pools[m_sidelinkConfiguration->m_rand->GetInteger (0, config.setup.ueSelected.poolToAddModList.nbPools - 1)].pool);
+      }
+    }//end if (ue selected)
+        
+    //inform MAC about the pool
+    m_cmacSapProvider.at (0)->AddSlTxPool (txPool);
+    //inform PHY about the pool
+    m_cphySapProvider.at (0)->SetSlTxPool (txPool); 
+
+  }//end if (setup)
+
+  else {
+    //release all tranmission pools
+    m_cphySapProvider.at (0)->RemoveSlTxPool (true); // add bool value so that we can use the function for discovery
+  }
+}
+
+
+
+/**
+ * Transmits a SidelinkUEInformation message to the eNodeB
+ */
+void
+LteUeRrc::SendSidelinkUeInformation ()
+{
+  NS_LOG_FUNCTION (this);
+
+  LteRrcSap::SidelinkUeInformation sidelinkUeInformation;
+  sidelinkUeInformation.haveCommRxInterestedFreq = false;
+  sidelinkUeInformation.haveCommTxResourceReq = false;
+  sidelinkUeInformation.haveDiscRxInterest = false; 
+  sidelinkUeInformation.haveDiscTxResourceReq = false; 
+
+  std::map <uint16_t, LteUeRrcSl::LteSlCellConfiguration>::iterator it = m_sidelinkConfiguration->m_slMap.find (m_cellId);
+  if (it != m_sidelinkConfiguration->m_slMap.end ()) {
+    //if SIB 18 received
+    //  if configured to receive sidelink communication
+    //    set commRxInterestedFreq with sidelink frequency
+    
+    //  if configuration to transmit sidelink communication
+    //    set commTxResourceReq with sidelink frequency and list of destination
+    if (it->second.haveSib18) {
+      if (m_sidelinkConfiguration->IsRxInterested ()) {
+        sidelinkUeInformation.haveCommRxInterestedFreq = true;
+        sidelinkUeInformation.commRxInterestedFreq = GetUlEarfcn ();
+      }
+      if (m_sidelinkConfiguration->IsTxInterested ()) {
+        std::list <uint32_t> destinations = m_sidelinkConfiguration->GetTxDestinations ();
+        sidelinkUeInformation.haveCommTxResourceReq = true;
+        sidelinkUeInformation.slCommTxResourceReq.carrierFreq = GetUlEarfcn ();
+        sidelinkUeInformation.slCommTxResourceReq.slDestinationInfoList.nbDestinations = destinations.size ();
+        std::list <uint32_t>::iterator it;
+        int index = 0;
+        for (it = destinations.begin() ; it != destinations.end() ; it++) {
+          sidelinkUeInformation.slCommTxResourceReq.slDestinationInfoList.SlDestinationIdentity[index++] = *it;
+        }
+      }
+    }                         
+
+    // similar for SIB 19
+    if (it->second.haveSib19) {
+
+      // UE interested in monitoring discovery announcements
+      if  ((m_sidelinkConfiguration->IsMonitoringInterested ()) and (m_sidelinkConfiguration->GetDiscInterFreq () ==  GetUlEarfcn ())) 
+      {
+        sidelinkUeInformation.haveDiscRxInterest = true;
+        sidelinkUeInformation.discRxInterest = true;
+      }
+      // UE interested in transmit discovery announcements
+      if  (m_sidelinkConfiguration->IsAnnouncingInterested ()) {        
+        sidelinkUeInformation.haveDiscTxResourceReq = true;      
+        NS_ASSERT_MSG (m_sidelinkConfiguration->GetDiscTxResources ()>0, "can't have 0 or negative resources for the discovery announcement. Check if DiscTxResources is defined for in-coverage or eNBs disabled for ou-of-coverage");
+        sidelinkUeInformation.discTxResourceReq = m_sidelinkConfiguration->GetDiscTxResources ();
+      }
+    }
+
+    // Record time
+    m_sidelinkConfiguration->RecordTransmissionOfSidelinkUeInformation ();
+    // send the message to eNodeB
+    m_rrcSapUser->SendSidelinkUeInformation (sidelinkUeInformation);
+  }
+} 
+
+void LteUeRrc::DoNotifySidelinkReception (uint8_t lcId, uint32_t srcL2Id, uint32_t dstL2Id)
+{
+  NS_LOG_FUNCTION (this << (uint16_t)lcId << srcL2Id << dstL2Id);
+
+  //add LC
+  Ptr<LteSidelinkRadioBearerInfo> slbInfo = AddSlrb (srcL2Id, dstL2Id, lcId);
+  NS_LOG_INFO ("Created new RX SLRB for group " << dstL2Id << " LCID=" << (slbInfo->m_logicalChannelIdentity & 0xF));
+}
+
+void LteUeRrc::DoNotifyDiscoveryReception (Ptr<LteControlMessage> msg)
+{
+  NS_LOG_FUNCTION (this << msg);
+  Ptr<SlDiscMessage> msg2 = DynamicCast<SlDiscMessage> (msg);
+  SlDiscMsg disc = msg2->GetSlDiscMessage ();
+  for (std::list<uint32_t>::iterator it = m_sidelinkConfiguration->m_monitorApps.begin (); it != m_sidelinkConfiguration->m_monitorApps.end (); ++it)
+  {
+    if ((std::bitset <184>)*it == disc.m_proSeAppCode)
+    {
+      NS_LOG_INFO ("discovery message received by " << m_rnti << ", proSeAppCode = " << *it);
+      m_discoveryMonitoringTrace (m_imsi, m_cellId, m_rnti, *it);
+    }
+  }
+}
+
+void
+LteUeRrc::SetSlssid(uint64_t slssid){
+  NS_LOG_FUNCTION (this << slssid);
+  m_slssId = slssid;
+  //Pass it to lower layers as well
+  m_cphySapProvider.at (0)->SetSlssId(slssid);
+}
+
+uint64_t
+LteUeRrc::GetSlssid()
+{
+  NS_LOG_FUNCTION (this);
+  return m_slssId;
+}
+
+uint64_t
+LteUeRrc::GetFrameNumber()
+{
+  NS_LOG_FUNCTION (this);
+  return m_currFrameNo;
+}
+
+uint64_t
+LteUeRrc::GetSubFrameNumber()
+{
+  NS_LOG_FUNCTION (this);
+  return m_currSubframeNo;
+}
+
+void
+LteUeRrc::InitiateSlssTransmission()
+{
+  NS_LOG_FUNCTION (this);
+
+  //Try to initiate SLSS transmissions only once ending an off-data period (didn't have data to transmit before)
+  if (!m_hasDataToTransmit)
+    {
+      NS_LOG_LOGIC (this << " the UE has data to transmit");
+      m_hasDataToTransmit = true;
+      if (m_hasSyncRef && IsInTheInnerPartOfTheSyncRefCell(m_currSyncRef.slssid,m_currSyncRef.rxOffset))
+        {
+          m_inInnerCellOfSyncRef = true;
+          NS_LOG_LOGIC (this << " the UE is in the inner cell of the selected SyncRef, no SLSS transmissions initiated");
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " the UE is in the outer cell of the selected SyncRef, SLSS transmissions initiated");
+          ActivateSlssTransmission();
+        }
+    }
+}
+
+void
+LteUeRrc::StopSlssTransmission()
+{
+  NS_LOG_FUNCTION (this);
+
+  //Try to stop SLSS transmissions only once ending an on-data period (had data to transmit before)
+  if(m_hasDataToTransmit)
+    {
+      m_hasDataToTransmit = false;
+      NS_LOG_LOGIC (this << " the UE has no data to transmit, stopping SLSS transmission");
+      DeactivateSlssTransmission();
+    }
+}
+
+void LteUeRrc::ActivateSlssTransmission ()
+{
+  NS_LOG_FUNCTION (this);
+
+  if (!m_slssTransmissionActive)
+    {
+      NS_LOG_LOGIC (this << " the SLSS transmission was not active, configuring it and activating it");
+      m_slssTransmissionActive = true;
+      LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+      //Configure own  SLSSID and SyncOffsetIndicator
+      if(m_hasSyncRef || m_currSyncRef.slssid != 0)
+        {
+          NS_LOG_LOGIC (this << " the UE has a selected SyncRef, using its SLSSID and the other offset indicator");
+          //Use the values from the SyncRef
+          m_slssId = m_currSyncRef.slssid;
+          uint16_t currSyncRefSyncOffsetIndicator = (10*m_currSyncRef.directFrameNo + m_currSyncRef.directSubframeNo) % 40;
+          if(currSyncRefSyncOffsetIndicator == preconf.preconfigSync.syncOffsetIndicator1 )
+            {
+              m_txSlSyncOffsetIndicator = preconf.preconfigSync.syncOffsetIndicator2;
+            } else{
+                m_txSlSyncOffsetIndicator = preconf.preconfigSync.syncOffsetIndicator1;
+            }
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " the UE does not have a selected SyncRef, selecting SLSSID and offset indicator randomly");
+          //Choose SLSSID Randomly between 168 and 335
+          SlChangeOfSyncRefStatParameters param;
+
+           param.imsi=m_imsi;
+           param.prevSlssid =m_slssId;
+           param.prevRxOffset=0;
+           param.prevFrameNo=m_currFrameNo;
+           param.prevSubframeNo=m_currSubframeNo;
+
+           m_slssId= m_imsi*10;
+
+           param.currSlssid=m_slssId;
+           param.currRxOffset=0;
+           param.currFrameNo=m_currFrameNo;
+           param.currSubframeNo=m_currSubframeNo;
+
+           m_ChangeOfSyncRefTrace(param);
+
+          //Choose SyncOffsetIndicator randomly between the two preconfigured values
+          Ptr<UniformRandomVariable> x = CreateObject<UniformRandomVariable> ();
+          if(x->GetInteger(0,1))
+            {
+              m_txSlSyncOffsetIndicator = preconf.preconfigSync.syncOffsetIndicator1;
+            }
+          else
+            {
+              m_txSlSyncOffsetIndicator = preconf.preconfigSync.syncOffsetIndicator2;
+            }
+        }
+      //Schedule the sending of the first MIB-SL according the selected SyncOffsetIndicator
+      uint16_t nextSLSS=0;
+      uint16_t currOffset = (m_currFrameNo*10 + m_currSubframeNo) % 40 ;
+      if ( currOffset < m_txSlSyncOffsetIndicator)
+        {
+          nextSLSS = m_txSlSyncOffsetIndicator - currOffset;
+        }
+      else
+        {
+          nextSLSS = 40 - currOffset + m_txSlSyncOffsetIndicator;
+        }
+      NS_LOG_INFO (this << " UE IMSI "<<m_imsi <<" activating SLSS transmission with SLSSID " << m_slssId <<", first SLSS in "<< nextSLSS<< "ms");
+
+
+      Simulator::Schedule (MilliSeconds(nextSLSS), &LteUeRrc::SendSlss, this);
+      m_slssTxTime = MilliSeconds(Simulator::Now().GetMilliSeconds()+nextSLSS);
+    }
+}
+
+void LteUeRrc::DeactivateSlssTransmission ()
+{
+  NS_LOG_FUNCTION (this);
+
+  if (m_slssTransmissionActive)
+    {
+      m_slssTransmissionActive = false;
+    }
+}
+
+void LteUeRrc::SaveSubframeIndication(uint16_t frameNo, uint16_t subFrameNo)
+{
+  //NS_LOG_FUNCTION (this << frameNo << subFrameNo ); //To much overhead as it is called every ms
+  m_currFrameNo = frameNo;
+  m_currSubframeNo = subFrameNo;
+}
+
+void
+LteUeRrc::SendSlss(){
+
+  NS_LOG_FUNCTION (this);
+
+  if(m_slssTransmissionActive)
+    {
+      NS_LOG_LOGIC (this << " the SLSS transmission is active");
+      //Send a SLSS if the UE is supposed to send it now (e.g. it didn't change of timing/SyncRef)
+      if((m_currFrameNo*10 + m_currSubframeNo) % 40 == m_txSlSyncOffsetIndicator)
+        {
+          NS_LOG_LOGIC (this << " the UE is supposed to send the SLSS now");
+
+          LteRrcSap::MasterInformationBlockSL mibSl;
+          LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+
+          mibSl.slBandwidth = preconf.preconfigGeneral.slBandwidth;
+          mibSl.inCoverage = m_inCoverage;
+          mibSl.directFrameNo = m_currFrameNo;
+          mibSl.directSubframeNo = m_currSubframeNo ;
+          mibSl.creationTimestamp = Simulator::Now();
+
+          if(!m_hasSyncRef)
+            {
+              mibSl.slssid = m_slssId;
+            }
+          else
+            {
+              mibSl.slssid = m_currSyncRef.slssid;
+            }
+
+          //Send the SLSS
+          NS_LOG_INFO (this <<" UE IMSI "<<m_imsi <<" sending SLSS");
+          NS_LOG_INFO (this << " mibSl.slBandwidth "<<mibSl.slBandwidth
+                       <<" mibSl.inCoverage "<<mibSl.inCoverage
+                       <<" mibSl.directFrameNo "<<mibSl.directFrameNo
+                       <<" mibSl.directSubframeNo "<<mibSl.directSubframeNo
+                       <<" mibSl.slssid "<<mibSl.slssid);
+
+          m_SendSlssTrace(m_imsi,mibSl.slssid,m_txSlSyncOffsetIndicator,mibSl.inCoverage,mibSl.directFrameNo,mibSl.directSubframeNo);
+
+          m_cphySapProvider.at (0)->SendSlss(mibSl);
+        }
+
+      //Calculate when the next SLSS is supposed to be send
+      uint16_t nextSLSS=0;
+      uint16_t currOffset = (m_currFrameNo*10 + m_currSubframeNo) % 40 ;
+      if ( currOffset < m_txSlSyncOffsetIndicator)
+        {
+          nextSLSS = m_txSlSyncOffsetIndicator - currOffset;
+        }
+      else
+        {
+          nextSLSS = 40 - currOffset + m_txSlSyncOffsetIndicator;
+        }
+
+      //Schedule the sent of the SLSS if it wasn't scheduled already
+      if (m_slssTxTime.GetMilliSeconds() == Simulator::Now().GetMilliSeconds())
+        {
+          Simulator::Schedule (MilliSeconds(nextSLSS), &LteUeRrc::SendSlss, this);
+          m_slssTxTime = MilliSeconds(Simulator::Now().GetMilliSeconds()+nextSLSS);
+          NS_LOG_LOGIC (this << " UE IMSI "<<m_imsi <<" scheduled a SLSS to be sent in "<<nextSLSS<<" ms");
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " UE IMSI "<<m_imsi <<" Duplicated SLSS scheduling, ignoring");
+        }
+    }
+}
+
+void
+LteUeRrc::SaveSlssMeasurements (uint16_t slssid, uint16_t offset, double srsrp, bool useLayer3Filtering)
+{
+  NS_LOG_FUNCTION (this << slssid << offset << srsrp << useLayer3Filtering);
+
+  std::map <std::pair<uint16_t,uint16_t>, SlssMeasValues>::iterator storedMeasIt = m_storedSlssMeasValues.find (std::pair<uint16_t,uint16_t>(slssid,offset));
+
+  if (storedMeasIt != m_storedSlssMeasValues.end ())
+    {
+      NS_LOG_LOGIC (this << " This SyncRef was measured in the past");
+
+      if (useLayer3Filtering)
+        {
+          LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+          NS_LOG_LOGIC (this << " Using L3 filtering with preconfigured filterCoefficient: "<< preconf.preconfigSync.filterCoefficient);
+
+          bool valid = false;
+
+          //Converting stored S-RSRP to linear units
+          double storedSrsrp_W = std::pow(10.0,storedMeasIt->second.srsrp/10.0)/1000.0;
+
+          double Fn_W;
+          if (srsrp > m_minSrsrp)
+            {
+              NS_LOG_LOGIC (this << " The new SyncRef S-RSRP is above the minimum required, applying filter");
+
+              double newSrsrp_W = std::pow(10.0,srsrp/10.0)/1000.0;
+
+              //The filter to be used according to //TS 36.331 5.5.3.2 is
+              //      F_n = (1-a)*F_{n-1} + a*M_n
+              //and it is defined for an input rate of 200 ms.
+              //If the input rate is different, the filter needs to be adapted such that
+              //its time characteristics are preserved.
+              //This is achieved using:
+              //      F_n = (1-a)^(nP) F_{n-1} + a M_n
+              //where nP is the number of 200 ms periods that have elapsed since last time
+              //the quantity was filtered and stored
+
+              double aSrsrp = std::pow (0.5, preconf.preconfigSync.filterCoefficient / 4.0); //TS 36.331 5.5.3.2 is
+              double nP = (Simulator::Now().GetMilliSeconds() -  storedMeasIt->second.timestamp.GetMilliSeconds()) / 200;
+              //std::cout<< Simulator::Now().GetMilliSeconds()<<" imsi: "<<m_imsi<< " slssid: "<< slssid << " offset: "<<offset <<" srsrp: "<< srsrp<<
+              //    "timestamp: "<<storedMeasIt->second.timestamp.GetMilliSeconds()<< std::endl;
+              Fn_W = std::pow ((1 - aSrsrp),nP) * storedSrsrp_W + aSrsrp * newSrsrp_W;
+              valid=true;
+            }
+          else
+            {
+              NS_LOG_LOGIC (this << " The new SyncRef S-RSRP is below or equal to the minimum required... Ignoring measurement");
+            }
+
+          if (valid)
+            {
+            //Converting filtered value to dBm
+            double Fn_dBm = 10 * log10 (1000 * (Fn_W));
+
+            //If after the filtering, it decays below the minimum required, use the minimum required
+            if(Fn_dBm <= m_minSrsrp)
+              {
+                NS_LOG_LOGIC (this << " The L3 filtered SyncRef S-RSRP is below or equal to the minimum required, storing minimum required");
+                storedMeasIt->second.srsrp = m_minSrsrp;
+                storedMeasIt->second.timestamp = Simulator::Now ();
+              }
+            else
+              {
+                NS_LOG_LOGIC (this << " The L3 filtered SyncRef S-RSRP is above the minimum required, storing it");
+                storedMeasIt->second.srsrp = Fn_dBm;
+                storedMeasIt->second.timestamp = Simulator::Now ();
+              }
+            }
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " Not using L3 filtering");
+          storedMeasIt->second.srsrp = srsrp;
+          storedMeasIt->second.timestamp = Simulator::Now ();
+        }
+    }
+  else
+    {
+      NS_LOG_LOGIC (this << " First time measuring this SyncRef, storing first value");
+      SlssMeasValues v;
+      v.srsrp = srsrp;
+      v.timestamp = Simulator::Now ();
+      m_storedSlssMeasValues.insert(std::pair< std::pair<uint16_t,uint16_t>, SlssMeasValues>(std::pair<uint16_t,uint16_t>(slssid,offset), v));
+      m_knownSlssidList.push_back(std::pair<uint16_t,uint16_t>(slssid,offset));
+    }
+  NS_LOG_INFO (this <<" IMSI " << m_imsi << " measured SyncRef with slssid " << slssid << " and offset " << offset <<" New S-RSRP "
+               << srsrp << " Stored S-RSRP " << storedMeasIt->second.srsrp);
+}
+
+void
+LteUeRrc::SynchronizeToStrongestSyncRef ()
+{
+  NS_LOG_FUNCTION (this);
+
+  uint64_t maxSrsrpSlssid = 0;
+  uint64_t maxSrsrpOffset = 0;
+
+  double maxSrsrp = -std::numeric_limits<double>::infinity ();
+
+  //Determine the strongest SyncRef
+  std::vector <std::pair<uint16_t,uint16_t> >::iterator RepIt;
+  for (RepIt = m_lastReportedSlssidList.begin (); RepIt != m_lastReportedSlssidList.end (); ++RepIt)
+    {
+      std::map <std::pair<uint16_t,uint16_t>, SlssMeasValues>::iterator it = m_storedSlssMeasValues.find(std::pair<uint16_t,uint16_t>(*RepIt));
+      if (it == m_storedSlssMeasValues.end ())
+        {
+          NS_LOG_ERROR(" The UE cannot find the S-RSRP measurements for the detected SyncRef SLSSID " << RepIt->first <<" offset " <<RepIt->second );
+        }
+      else
+        {
+          if (maxSrsrp < it->second.srsrp)
+            {
+              maxSrsrpSlssid = it->first.first ;
+              maxSrsrpOffset = it->first.second;
+              maxSrsrp = it->second.srsrp;
+            }
+        }
+    }
+
+  NS_LOG_INFO (this <<" The strongest SyncRef SLSSID "<< maxSrsrpSlssid << " offset "<<maxSrsrpOffset <<" has a S-RSRP of "<<maxSrsrp<<" dBm" );
+
+  LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+
+  if (maxSrsrpSlssid == 0 || maxSrsrp - m_minSrsrp <  preconf.preconfigSync.syncRefMinHyst)
+    {
+      NS_LOG_LOGIC (this << " Unable to find suitable SyncRef");
+      if(!m_slssTransmissionActive && m_hasDataToTransmit)
+        {
+          NS_LOG_LOGIC (this <<" The UE is transmitting sidelink communication... Activating own SLSS transmission");
+          ActivateSlssTransmission();
+        }
+    }
+  else
+    {
+      NS_LOG_LOGIC (this << " The strongest SyncRef is suitable");
+
+      //Verify we have the mib for the strongest SyncRef
+      std::map <std::pair<uint16_t,uint16_t>, LteRrcSap::MasterInformationBlockSL>::iterator itMap
+      = m_latestMibSlReceived.find (std::pair<uint16_t,uint16_t>(maxSrsrpSlssid,maxSrsrpOffset ));
+      if (itMap == m_latestMibSlReceived.end ())
+        {
+          NS_LOG_ERROR(" The UE is unable to find the MIB-SL of the strongest SyncRef");
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " The MIB-SL of the strongest SyncRef was found... Instructing synchronization");
+
+          NS_LOG_INFO (this <<" UE IMSI "<<m_imsi <<" selected SyncRef slssid "<<maxSrsrpSlssid << " offset " << maxSrsrpOffset);
+          NS_LOG_INFO (this <<" mibSl.slBandwidth "<<(*itMap).second.slBandwidth
+                       <<" mibSl.inCoverage "<<(*itMap).second.inCoverage
+                       <<" mibSl.directFrameNo "<<(*itMap).second.directFrameNo
+                       <<" mibSl.directSubframeNo "<<(*itMap).second.directSubframeNo
+                       <<" mibSl.slssid "<<(*itMap).second.slssid
+                       <<" mibSl.creationTimestamp "<<(*itMap).second.creationTimestamp.GetMilliSeconds()
+                       <<" mibSl.rxTimestamp "<<(*itMap).second.rxTimestamp.GetMilliSeconds());
+
+          //Instruct the phy to syncronize with maxSrsrpSlssid
+          m_cphySapProvider.at (0)->SynchronizeToSyncRef((*itMap).second);
+        }
+    }
+}
+
+bool
+LteUeRrc::IsInTheInnerPartOfTheSyncRefCell(uint16_t slssid, uint16_t offset)
+{
+  NS_LOG_FUNCTION (this << slssid << offset);
+
+  LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+
+  std::map <std::pair<uint16_t,uint16_t>, SlssMeasValues>::iterator itMap = m_storedSlssMeasValues.find(std::pair<uint16_t,uint16_t>(slssid,offset));
+  if (itMap == m_storedSlssMeasValues.end ())
+    {
+      NS_LOG_ERROR(" The UE cannot find the S-RSRP measurements for the selected SyncRef SLSSID " << slssid <<" offset " << offset);
+      return false;
+    }
+  else
+    {
+      if ((*itMap).second.srsrp >= preconf.preconfigSync.syncTxThreshOoC)
+        {
+          NS_LOG_LOGIC (this << " The SyncRef S-RSRP is above or equal to the configured syncTxThreshOoC, i.e., the UE is in the inner part of the SyncRef cell");
+          return true;
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " The SyncRef S-RSRP is below the configured syncTxThreshOoC, i.e., the UE is in the outer part of the SyncRef cell");
+          return false;
+        }
+    }
+}
+
+void LteUeRrc::DoReceiveMibSL (LteRrcSap::MasterInformationBlockSL mibSl)
+{
+
+  NS_LOG_FUNCTION (this);
+
+  mibSl.rxTimestamp = Simulator::Now();
+  mibSl.rxOffset = Simulator::Now().GetMilliSeconds() % 40;
+
+  NS_LOG_INFO (this <<" UE IMSI "<<m_imsi <<" received MIB-SL ");
+  NS_LOG_INFO (this <<" mibSl.slBandwidth "<<mibSl.slBandwidth
+               <<", mibSl.inCoverage "<<mibSl.inCoverage
+               <<", mibSl.directFrameNo "<<mibSl.directFrameNo
+               <<", mibSl.directSubframeNo "<<mibSl.directSubframeNo
+               <<", mibSl.creationTimestamp "<< mibSl.creationTimestamp.GetMilliSeconds()<<" (ms)"
+               <<", mibSl.rxTimestamp "<<mibSl.rxTimestamp.GetMilliSeconds()<<" (ms)"
+               <<", mibSl.slssid "<<mibSl.slssid
+               <<", mibSl.rxOffset "<<mibSl.rxOffset);
+
+
+  //Store the mib
+  std::map <std::pair<uint16_t,uint16_t>, LteRrcSap::MasterInformationBlockSL>::iterator itMap
+  = m_latestMibSlReceived.find (std::pair<uint16_t,uint16_t>(mibSl.slssid, mibSl.rxOffset));
+
+  if (itMap == m_latestMibSlReceived.end ())
+    {
+      //Insert new entry
+      NS_LOG_LOGIC (this << " First received MIB-SL for SyncRef with SLSSID "<<mibSl.slssid << " offset " <<mibSl.rxOffset);
+      m_latestMibSlReceived.insert (std::pair <std::pair<uint16_t,uint16_t>, LteRrcSap::MasterInformationBlockSL> (std::pair<uint16_t,uint16_t>(mibSl.slssid, mibSl.rxOffset), mibSl));
+    }
+  else{
+      //Replace the entry
+      NS_LOG_LOGIC (this << " Updating stored MIB-SL for SyncRef with SLSSID "<<mibSl.slssid << " offset " <<mibSl.rxOffset);
+      (*itMap).second.slBandwidth = mibSl.slBandwidth;
+      (*itMap).second.inCoverage = mibSl.inCoverage;
+      (*itMap).second.directFrameNo = mibSl.directFrameNo;
+      (*itMap).second.directSubframeNo = mibSl.directSubframeNo;
+      (*itMap).second.slssid = mibSl.slssid;
+      (*itMap).second.rxTimestamp= mibSl.rxTimestamp;
+      (*itMap).second.creationTimestamp= mibSl.creationTimestamp;
+  }
+  //Verify if it is a MIB-SL from the current SyncRef
+  if(m_hasSyncRef && mibSl.slssid == m_currSyncRef.slssid){
+      NS_LOG_LOGIC (this << " The received MIB-SL is from the selected SyncRef (SLSSID "<<mibSl.slssid << " offset " <<mibSl.rxOffset<<")");
+  }
+}
+
+void LteUeRrc::DoReportSlssMeasurements ( LteUeCphySapUser::UeSlssMeasurementsParameters params, uint64_t slssid, uint16_t offset )
+{
+  NS_LOG_FUNCTION (this);
+
+  bool useLayer3Filtering = false;
+  LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+  if (preconf.preconfigSync.filterCoefficient != 0){
+      NS_LOG_LOGIC (this << " Using L3 filtering");
+      useLayer3Filtering = true;
+  }
+
+  if (m_knownSlssidList.size() > 0 && slssid == 0){ //Measurement for SyncRef selection report
+
+      NS_LOG_LOGIC (this << " The report corresponds to the measurement sub-process");
+
+      //Storing the measurements of the known SLSSIDs
+      std::vector <std::pair<uint16_t,uint16_t> >::iterator knownSlssidIit;
+      for (knownSlssidIit = m_knownSlssidList.begin ();
+          knownSlssidIit != m_knownSlssidList.end (); ++knownSlssidIit)
+        {
+          bool found = false;
+          std::vector <LteUeCphySapUser::UeSlssMeasurementReportElement>::iterator newMeasIt;
+          for (newMeasIt = params.m_ueSlssMeasurementsList.begin ();
+              newMeasIt != params.m_ueSlssMeasurementsList.end (); newMeasIt++)
+            {
+              if ( (*knownSlssidIit).first ==  newMeasIt->m_slssid && (*knownSlssidIit).second ==  newMeasIt->m_offset)
+                {
+                  NS_LOG_LOGIC (this <<" UE IMSI "<<m_imsi<< " reported measurements from known SincRef with SLSSID "<<newMeasIt->m_slssid<<" offset "<<newMeasIt->m_offset<<" S-RSRP "<<newMeasIt->m_srsrp );
+                  SaveSlssMeasurements(newMeasIt->m_slssid,newMeasIt->m_offset,newMeasIt->m_srsrp,useLayer3Filtering);
+                  m_lastReportedSlssidList.push_back(std::pair<uint16_t,uint16_t>(newMeasIt->m_slssid,newMeasIt->m_offset));
+                  found = true;
+                  break;
+                }
+            }
+          if (!found)
+            {
+              NS_LOG_LOGIC (this <<" UE IMSI "<<m_imsi<< " did not report measurements from known SincRef with SLSSID"<<(*knownSlssidIit).first << " offset "<<(*knownSlssidIit).second);
+            }
+        }
+      //Adding the measures of the not known SLSSIDs
+      std::vector <LteUeCphySapUser::UeSlssMeasurementReportElement>::iterator newMeasIt;
+      for (newMeasIt = params.m_ueSlssMeasurementsList.begin ();
+          newMeasIt != params.m_ueSlssMeasurementsList.end (); newMeasIt++)
+        {
+          bool found = false;
+          std::vector <std::pair<uint16_t,uint16_t> >::iterator knownSlssidIit;
+          for (knownSlssidIit = m_knownSlssidList.begin ();
+              knownSlssidIit != m_knownSlssidList.end (); ++knownSlssidIit)
+            {
+              if ( (*knownSlssidIit).first ==  newMeasIt->m_slssid && (*knownSlssidIit).second ==  newMeasIt->m_offset)
+                {
+                  found = true;
+                  break;
+                }
+            }
+          if(!found)
+            {
+              NS_LOG_LOGIC (this <<" UE IMSI "<<m_imsi<< " reported measurements from not known SincRef with SLSSID "<<newMeasIt->m_slssid<< " offset "<<newMeasIt->m_offset<<" S-RSRP "<<newMeasIt->m_srsrp);
+              SaveSlssMeasurements(newMeasIt->m_slssid,newMeasIt->m_offset, newMeasIt->m_srsrp,useLayer3Filtering);
+              m_lastReportedSlssidList.push_back(std::pair<uint16_t,uint16_t>(newMeasIt->m_slssid,newMeasIt->m_offset));
+              found = true;
+            }
+        }
+  }
+  else if (m_knownSlssidList.size() == 0) //The first report with detected SyncRefs
+    {
+      NS_LOG_LOGIC (this << " The report corresponds to the first measurement sub-process with detected SyncRefs");
+
+      std::vector <LteUeCphySapUser::UeSlssMeasurementReportElement>::iterator newMeasIt;
+      for (newMeasIt = params.m_ueSlssMeasurementsList.begin ();
+          newMeasIt != params.m_ueSlssMeasurementsList.end (); ++newMeasIt)
+        {
+          NS_LOG_LOGIC (this <<" UE IMSI "<<m_imsi<< " reported measurements from not known SincRef with SLSSID "<<newMeasIt->m_slssid<< " offset "<<newMeasIt->m_offset<<" S-RSRP "<<newMeasIt->m_srsrp);
+          SaveSlssMeasurements(newMeasIt->m_slssid,newMeasIt->m_offset, newMeasIt->m_srsrp,useLayer3Filtering);
+          m_lastReportedSlssidList.push_back(std::pair<uint16_t,uint16_t>(newMeasIt->m_slssid,newMeasIt->m_offset));
+
+        }
+    }
+  else if (slssid > 0)//Specific SLSSID report (i.e., evaluation of selected SyncRef)
+    {
+      NS_LOG_LOGIC (this << " The report corresponds to the evaluation sub-process");
+
+      std::vector <LteUeCphySapUser::UeSlssMeasurementReportElement>::iterator newMeasIt;
+      if (params.m_ueSlssMeasurementsList.size() == 1)
+        {
+          newMeasIt = params.m_ueSlssMeasurementsList.begin();
+          if(newMeasIt->m_slssid == slssid)
+            {
+              NS_LOG_LOGIC (this <<" UE IMSI "<<m_imsi<< " reported measurements from selected SincRef with SLSSID "<<newMeasIt->m_slssid<< " offset "<<newMeasIt->m_offset<<" S-RSRP "<<newMeasIt->m_srsrp);
+              SaveSlssMeasurements(newMeasIt->m_slssid,newMeasIt->m_offset, newMeasIt->m_srsrp,useLayer3Filtering);
+              m_lastReportedSlssidList.push_back(std::pair<uint16_t,uint16_t>(slssid,offset));
+            }
+          else
+            {
+              NS_LOG_ERROR(" The S-RSRP measurements does not correspond to the intended SyncRef with SLSSID "<<slssid<<" offset "<<offset);
+            }
+        }
+      else if (params.m_ueSlssMeasurementsList.size() == 0) //The SyncRef disappeared
+        {
+          NS_LOG_LOGIC (this <<" The UE is unable to find the S-RSRP measurements of the selected SyncRef with SLSSID "<<slssid<<" offset "<<offset);
+        }
+      else if (params.m_ueSlssMeasurementsList.size() > 1)
+        {
+          NS_LOG_ERROR(" The S-RSRP measurement report intended for evaluation of selected SyncRef has more than one SyncRef reported ");
+        }
+    }
+
+  //Selection of the SyncRef
+  if(m_hasSyncRef && slssid == 0)
+    {
+      NS_LOG_LOGIC (this <<" Evaluating validity of current SyncRef");
+
+      LteRrcSap::SlPreconfiguration preconf = m_sidelinkConfiguration->GetSlPreconfiguration ();
+      //Select strongest candidate
+      uint16_t maxSrsrpSlssid = 0;
+      uint64_t maxSrsrpOffset = 0;
+      bool syncRefDetected = false;
+      double maxSrsrp = -std::numeric_limits<double>::infinity ();
+      std::vector <std::pair<uint16_t,uint16_t> >::iterator RepIt;
+      for (RepIt = m_lastReportedSlssidList.begin (); RepIt != m_lastReportedSlssidList.end (); ++RepIt)
+        {
+          if ( (*RepIt).first == m_currSyncRef.slssid && (*RepIt).second == m_currSyncRef.rxOffset){
+              syncRefDetected = true;
+          }
+          std::map <std::pair<uint16_t,uint16_t>, SlssMeasValues>::iterator it = m_storedSlssMeasValues.find(std::pair<uint16_t,uint16_t>(*RepIt));
+          if (it == m_storedSlssMeasValues.end ())
+            {
+              NS_LOG_ERROR(" The UE cannot find the S-RSRP measurements for the detected SyncRef SLSSID " << RepIt->first <<" offset " <<RepIt->second );
+            }
+          else
+            {
+              if (maxSrsrp < it->second.srsrp)
+                {
+                  maxSrsrpSlssid = it->first.first;
+                  maxSrsrpOffset = it->first.second;
+                  maxSrsrp = it->second.srsrp;
+                }
+            }
+        }
+
+      NS_LOG_INFO (this <<" The strongest SyncRef SLSSID "<< maxSrsrpSlssid << " offset "<<maxSrsrpOffset <<" has a S-RSRP of "<<maxSrsrp<<" dBm" );
+      //Strongest candidate exceeds the minimum required?
+      if (maxSrsrpSlssid != 0 && maxSrsrp - m_minSrsrp >  preconf.preconfigSync.syncRefMinHyst)
+        {
+          //Yes
+          NS_LOG_LOGIC(this <<" The strongest candidate S-RSRP exceeds the minimum required by the corresponding threshold syncRefMinHyst" );
+
+          //The selected SyncRef was detected?
+          if (!syncRefDetected)
+            {
+              //No... consider the selected SyncRef not valid
+              NS_LOG_LOGIC(this <<" The selected SyncRef was not detected... Considering it not valid" );
+              m_hasSyncRef = false;
+            }
+          else
+            {
+              //Yes
+              std::map <std::pair<uint16_t,uint16_t>, SlssMeasValues>::iterator itMap = m_storedSlssMeasValues.find (std::pair<uint16_t,uint16_t>(m_currSyncRef.slssid,m_currSyncRef.rxOffset));
+              if (itMap == m_storedSlssMeasValues.end ())
+                {
+                  NS_LOG_LOGIC(this <<" The UE cannot find the S-RSRP measurements for the selected SyncRef... Considering it not valid"  );
+                  m_hasSyncRef = false;
+                }
+              else
+                {
+                  //Strongest candidate better than the selected SyncRef?
+                  if (maxSrsrp - (*itMap).second.srsrp > preconf.preconfigSync.syncRefDiffHyst)
+                    {
+                      //Yes... Consider not valid the selected SyncRef
+                      NS_LOG_LOGIC(this <<" The strongest candidate S-RSRP exceeds the selected SyncRef one by the corresponding threshold syncRefDiffHyst... Considering the selected SyncRef not valid" );
+                      m_hasSyncRef = false;
+                    }
+                  else
+                    {
+                      //No... Keep the selected SyncRef
+                      NS_LOG_LOGIC(this <<" The strongest candidate S-RSRP does not exceed the selected SyncRef one by the corresponding threshold syncRefDiffHyst... Keeping the selected SyncRef" );
+                    }
+                }
+            }
+        }
+      else
+        {
+          //No... Keep the selected SyncRef
+          NS_LOG_LOGIC(this <<" The strongest candidate S-RSRP does not exceed the minimum required by the corresponding threshold syncRefMinHyst" );
+        }
+    }
+  if(!m_hasSyncRef && slssid == 0)
+    {
+      NS_LOG_LOGIC(this <<" The UE does not have a (valid) selected SyncRef... Selecting the strongest candidate if approppriate" );
+      //Evaluate candidates for selection of SyncRef
+      SynchronizeToStrongestSyncRef ();
+    }
+
+  if (m_hasSyncRef && slssid > 0)
+    {
+      NS_LOG_LOGIC(this <<" Evaluating S-RSRP measurements of the selected SyncRef" );
+
+      if(IsInTheInnerPartOfTheSyncRefCell(m_currSyncRef.slssid, m_currSyncRef.rxOffset))
+        {
+          NS_LOG_LOGIC (this << " the UE is in the inner cell of the selected SyncRef");
+          if(m_slssTransmissionActive == true )
+            {
+              NS_LOG_LOGIC (this << " the UE was transmitting SLSS... Deactivating the SLSS transmission");
+              DeactivateSlssTransmission ();
+            }
+          m_inInnerCellOfSyncRef = true;
+        }
+      else
+        {
+          NS_LOG_LOGIC (this << " the UE is in the outer cell of the selected SyncRef");
+
+          if(m_inInnerCellOfSyncRef && m_hasDataToTransmit)
+            {
+              // It was in the inner cell, but not anymore
+
+              NS_LOG_LOGIC (this << " the UE was in the outer cell of the selected SyncRef (but not anymore) "
+                  "and it is transmitting sidelink communication... Activating SLSS transmission");
+             ActivateSlssTransmission ();
+            }
+          m_inInnerCellOfSyncRef = false;
+        }
+    }
+  m_lastReportedSlssidList.clear();
+}
+
+void
+LteUeRrc::DoReportChangeOfSyncRef (LteRrcSap::MasterInformationBlockSL mibSl, uint16_t frameNo, uint16_t subFrameNo)
+{
+  NS_LOG_FUNCTION (this);
+
+  m_hasSyncRef = true;
+
+  uint16_t previousFrameNo = m_currFrameNo;
+  uint16_t previousSubFrameNo = m_currSubframeNo;
+
+  //Save the current subframe indication
+  SaveSubframeIndication(frameNo, subFrameNo);
+
+  SlChangeOfSyncRefStatParameters param;
+  param.imsi=m_imsi;
+  param.prevSlssid =m_slssId;
+  param.prevRxOffset=m_currSyncRef.rxOffset;
+  param.prevFrameNo=previousFrameNo;
+  param.prevSubframeNo=previousSubFrameNo;
+
+  //Storing the value of the MIB (Note this is not the current frameNo and subframeNo)
+  m_currSyncRef.directFrameNo = mibSl.directFrameNo;
+  m_currSyncRef.directSubframeNo = mibSl.directSubframeNo;
+  m_currSyncRef.inCoverage = mibSl.inCoverage;
+  m_currSyncRef.rxTimestamp = mibSl.rxTimestamp;
+  m_currSyncRef.creationTimestamp = mibSl.creationTimestamp;
+  m_currSyncRef.slBandwidth = mibSl.slBandwidth;
+  m_currSyncRef.slssid = mibSl.slssid;
+  m_currSyncRef.rxOffset = mibSl.rxOffset;
+
+  m_slssId = mibSl.slssid;
+
+  param.currSlssid=m_slssId;
+  param.currRxOffset=mibSl.rxOffset;
+  param.currFrameNo=m_currFrameNo;
+  param.currSubframeNo=m_currSubframeNo;
+
+  m_ChangeOfSyncRefTrace(param);
+
+  NS_LOG_INFO (this <<" UE IMSI "<<m_imsi <<" reported successful change of SyncRef, selected SyncRef SLSSID "<< mibSl.slssid <<"offset "<< mibSl.rxOffset);
+}
+
+void LteUeRrc::DoReportSubframeIndication(uint16_t frameNo, uint16_t subFrameNo)
+{
+  //NS_LOG_FUNCTION (this << frameNo << subFrameNo ); // Too much overhead as it is called every ms
+  SaveSubframeIndication(frameNo, subFrameNo);
+}
+
+void
+LteUeRrc::DoNotifyMacHasSlDataToSend()
+{
+  NS_LOG_FUNCTION (this);
+  if (m_slssTransmissionEnabled){
+      NS_LOG_LOGIC(this <<" The MAC notified that it has data to send, and SLSS transmissions are enabled... Initiating SLSS transmissions" );
+      InitiateSlssTransmission();
+  }
+}
+
+void
+LteUeRrc::DoNotifyMacHasNotSlDataToSend()
+{
+  NS_LOG_FUNCTION (this);
+  if (m_slssTransmissionEnabled){
+      NS_LOG_LOGIC(this <<" The MAC notified that it does not have anymore data to send, and SLSS transmissions are enabled... Stoping SLSS transmissions" );
+      StopSlssTransmission();
+  }
+}
 
 
 } // namespace ns3

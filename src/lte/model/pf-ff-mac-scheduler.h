@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Marco Miozzo <marco.miozzo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef PF_FF_MAC_SCHEDULER_H
@@ -57,8 +58,10 @@ struct pfsFlowPerf_t
 {
   Time flowStart; ///< flow start time
   unsigned long totalBytesTransmitted; ///< total bytes transmitted
-  unsigned int lastTtiBytesTrasmitted; ///< last total bytes transmitted
+  unsigned int lastTtiBytesTransmitted; ///< last total bytes transmitted
   double lastAveragedThroughput; ///< last averaged throughput
+  double secondLastAveragedThroughput;
+  double targetThroughput; ///< Target throughput
 };
 
 
@@ -283,6 +286,14 @@ private:
    * \param size the size
    */
   void UpdateUlRlcBufferInfo (uint16_t rnti, uint16_t size);
+  /**
+   * \brief Update UL RCL buffer info
+   *
+   * \param rnti the RNTI
+   * \param lcid the LCID
+   * \param size the size
+   */
+  void UpdateUlRlcBufferInfo (uint16_t rnti, uint8_t lcid, uint16_t size); // modified to include the lcid 
 
   /**
   * \brief Update and return a new process Id for the RNTI specified
@@ -314,15 +325,20 @@ private:
   std::map <LteFlowId_t, FfMacSchedSapProvider::SchedDlRlcBufferReqParameters> m_rlcBufferReq;
 
 
-  /**
+  /*
   * Map of UE statistics (per RNTI basis) in downlink
   */
-  std::map <uint16_t, pfsFlowPerf_t> m_flowStatsDl;
+  std::multimap <uint16_t, std::map <uint8_t, pfsFlowPerf_t> > m_flowStatsDl;
 
-  /**
+  /*
   * Map of UE statistics (per RNTI basis)
   */
-  std::map <uint16_t, pfsFlowPerf_t> m_flowStatsUl;
+  std::multimap <uint16_t, std::map <uint8_t, pfsFlowPerf_t> > m_flowStatsUl;
+
+  /*
+  * Map of UE statistics (per RNTI basis)
+  */
+  std::map <LteFlowId_t,struct LogicalChannelConfigListElement_s> m_ueLogicalChannelsConfigList;
 
 
   /**
@@ -343,11 +359,12 @@ private:
   */
   std::map <uint16_t,uint32_t> m_a30CqiTimers;
 
-  /**
-  * Map of previous allocated UE per RBG
-  * (used to retrieve info from UL-CQI)
-  */
-  std::map <uint16_t, std::vector <uint16_t> > m_allocationMaps;
+  /*
+   * Map of previous allocated UE per RBG
+   * (used to retrieve info from UL-CQI)
+   */
+  std::map <uint16_t, std::multimap <uint16_t, std::map <uint8_t, std::vector <uint16_t> > > > m_allocationMaps;  //new structure
+
 
   /**
   * Map of UEs' UL-CQI per RBG
@@ -358,10 +375,11 @@ private:
   */
   std::map <uint16_t, uint32_t> m_ueCqiTimers;
 
-  /**
-  * Map of UE's buffer status reports received
-  */
-  std::map <uint16_t,uint32_t> m_ceBsrRxed;
+  /*
+   * Map of UE's buffer status reports received
+   */
+  std::multimap <uint16_t, std::map <uint8_t, uint32_t> > m_ceBsrRxed; //new structure for m_ceBsrRxed in order to handle LCs
+
 
   // MAC SAPs
   FfMacCschedSapUser* m_cschedSapUser; ///< CSched SAP user

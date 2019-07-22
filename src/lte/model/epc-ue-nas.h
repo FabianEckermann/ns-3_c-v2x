@@ -16,6 +16,7 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  * Author: Nicola Baldo <nbaldo@cttc.es>
+ * Modified by: NIST (D2D)
  */
 
 #ifndef EPC_UE_NAS_H
@@ -25,6 +26,8 @@
 #include <ns3/object.h>
 #include <ns3/lte-as-sap.h>
 #include <ns3/epc-tft-classifier.h>
+#include <ns3/lte-sl-tft.h>
+#include <map>
 
 namespace ns3 {
 
@@ -181,6 +184,32 @@ public:
    */
   typedef void (* StateTracedCallback)
     (const State oldState, const State newState);
+
+  /**
+   * Activate sidelink bearer
+   * \param tft The bearer information
+   */
+  void ActivateSidelinkBearer (Ptr<LteSlTft> tft);
+
+  /**
+   * Deactivate sidelink bearer
+   * \param tft The bearer information
+   */
+  void DeactivateSidelinkBearer (Ptr<LteSlTft> tft);
+  
+  /**
+   * Add Discovery Applications
+   * \param apps applications to be added
+   * \param rxtx 0 for monitoring and 1 for announcing
+   */
+  void AddDiscoveryApps (std::list<uint32_t> apps, bool rxtx);
+ 
+  /**
+   * Remove Discovery Applications
+   * \param apps applications to be removed
+   * \param rxtx 0 for monitoring and 1 for announcing
+   */
+  void RemoveDiscoveryApps (std::list<uint32_t> apps, bool rxtx);
  
 private:
 
@@ -196,6 +225,11 @@ private:
    * \param packet the packet
    */
   void DoRecvData (Ptr<Packet> packet);
+  /**
+   * Notify sidelink radio bearer activated
+   * \param group the group
+   */
+  void DoNotifySidelinkRadioBearerActivated (uint32_t group);
 
   // internal methods
   /**
@@ -247,6 +281,10 @@ private:
   };
 
   std::list<BearerToBeActivated> m_bearersToBeActivatedList; ///< bearers to be activated list
+
+  std::list<Ptr<LteSlTft> > m_pendingSlBearersList; ///< Sidelink bearers being setup
+
+  std::list<Ptr<LteSlTft> > m_slBearersActivatedList; ///< Sidelink bearers activated
 
 };
 
