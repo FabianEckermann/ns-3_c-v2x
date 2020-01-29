@@ -29,7 +29,7 @@ To run the example script run:
 
 If you use our model in your research, please cite the following paper:
 
-F. Eckermann, M. Kahlert, C. Wietfeld, ["Performance Analysis of C-V2X Mode 4 Communication Introducing an Open-Source C-V2X Simulator"](https://www.kn.e-technik.tu-dortmund.de/.cni-bibliography/publications/cni-publications/Eckermann2019performance.pdf), In 2019 IEEE 90th Vehicular Technology Conference (VTC-Fall), Honolulu, Hawaii, USA, September 2019. (accepted for presentation).
+F. Eckermann, M. Kahlert, C. Wietfeld, ["Performance Analysis of C-V2X Mode 4 Communication Introducing an Open-Source C-V2X Simulator"](https://www.kn.e-technik.tu-dortmund.de/.cni-bibliography/publications/cni-publications/Eckermann2019performance.pdf), In 2019 IEEE 90th Vehicular Technology Conference (VTC-Fall), Honolulu, Hawaii, USA, September 2019.
 
 ### Bibtex:
     @InProceedings{Eckermann2019performance,
@@ -37,7 +37,6 @@ F. Eckermann, M. Kahlert, C. Wietfeld, ["Performance Analysis of C-V2X Mode 4 Co
         Title = {Performance Analysis of {C-V2X} Mode 4 Communication Introducing an Open-Source {C-V2X} Simulator},
         Booktitle = {2019 IEEE 90th Vehicular Technology Conference (VTC-Fall)},
         Year = {2019},
-        Publishingstatus = {accepted for presentation},
         Address = {Honolulu, Hawaii, USA},
         Month = {September},
     }
