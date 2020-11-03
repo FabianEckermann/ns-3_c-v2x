@@ -2,6 +2,15 @@
 
 A ns-3 model for C-V2X Mode 4 communication based on the ns-3 D2D model from [NIST](https://github.com/usnistgov/psc-ns3/tree/d2d-ns-3.22).
 
+![TU Dortmund University](img/tu-dortmund_small.png "TU Dortmund University")
+![InVerSiV](img/Inversiv_small.png "InVerSiV")
+![SFB 876](img/SFB876_small.png "Collaborative Research Center SFB 876")
+![Communication Networks Institute](img/CNI_small.png "Communication Networks Institute")
+![EFRE](img/EFRE_small.png "EFRE")
+![DFG](img/DFG_small.png "DFG")
+
+The work on this paper has been partially funded by the federal state of Northrhine-Westphalia and the “European Regional Development Fund” (EFRE) 2014-2020 in the course of the InVerSiV project under grant number EFRE-0800422 and by DeutscheForschungsgemeinschaft (DFG) within the Collaborative Research Center SFB 876 project B4.
+
 ## Installation
 
 1. Clone or download the source code from this repository
